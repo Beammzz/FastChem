@@ -104,3 +104,27 @@ The codebase is designed for extension:
 - **New question types** — add new compound/element data files
 - **PVP mode** — WebSocket support can be added to the Gin server
 - **Authentication** — add middleware to Gin router
+
+## Docker: Build & Run with Persistent DB
+
+- **DB file location**: the backend uses SQLite and defaults to `fastchem.db` in the working directory (see [backend/internal/database/db.go](backend/internal/database/db.go#L18) and [backend/internal/config/config.go](backend/internal/config/config.go#L22)). To persist data across container restarts, mount a host directory and point `DB_PATH` to a file inside that directory.
+
+- **Build the image**:
+
+```bash
+docker build -t fastchem:local .
+```
+
+- **Run with a host volume mapped to `/data` and persistent DB**:
+
+```bash
+mkdir -p ./data
+docker run --rm -p 8080:8080 \
+  -v "$(pwd)/data:/data" \
+  -e DB_PATH=/data/fastchem.db \
+  fastchem:local
+```
+
+- **Docker Compose**: see `docker-compose.yml` included in the repo for an example service that maps `./data` → container `/data` and sets `DB_PATH=/data/fastchem.db`.
+
+If you want, I can add a small helper script to build & run the image locally.

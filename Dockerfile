@@ -21,14 +21,16 @@ RUN npm run build
 ############################
 # Stage 2 — Backend Builder
 ############################
-FROM golang:1.24-bullseye AS backend-builder
+FROM golang:1.24-alpine AS backend-builder
 
 WORKDIR /app/backend
 
-# Install required packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# Install required packages for cgo + sqlite build
+RUN apk add --no-cache \
+    build-base \
+    sqlite-dev \
+    git \
+    ca-certificates
 
 # Cache Go modules
 COPY backend/go.mod backend/go.sum ./
@@ -40,10 +42,8 @@ COPY backend/ ./
 # Copy frontend static export
 COPY --from=frontend-builder /app/frontend/out ./frontend/out
 
-# Multi-arch support
-ARG TARGETOS
-ARG TARGETARCH
-ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
+# Enable cgo and build for linux
+ENV CGO_ENABLED=1 GOOS=linux
 
 # Build optimized binary
 RUN go build \
@@ -56,7 +56,7 @@ RUN go build \
 ############################
 # Stage 3 — Runtime (Minimal)
 ############################
-FROM gcr.io/distroless/static-debian12
+FROM alpine:3.20
 
 WORKDIR /app
 
@@ -66,13 +66,15 @@ COPY --from=backend-builder /app/server ./server
 # Copy static frontend (if NOT embedding)
 COPY --from=backend-builder /app/backend/frontend/out ./frontend/out
 
-# Copy system CA certificates
-COPY --from=backend-builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Install runtime dependencies and create nonroot user
+RUN apk add --no-cache sqlite-libs ca-certificates \
+    && addgroup -S nonroot \
+    && adduser -S -G nonroot nonroot
 
 ENV PORT=8080
 
 EXPOSE 8080
 
-USER nonroot:nonroot
+USER nonroot
 
 ENTRYPOINT ["/app/server"]

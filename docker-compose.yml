@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  fastchem:
+    build: .
+    image: fastchem:local
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - DB_PATH=/data/fastchem.db
+    restart: unless-stopped
