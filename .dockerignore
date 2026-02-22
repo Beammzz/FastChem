@@ -1,0 +1,13 @@
+.git
+node_modules
+frontend/node_modules
+frontend/.next
+backend/bin
+logs
+.env
+dist
+*.log
+README.md
+run.sh
+**/node_modules
+**/.env
