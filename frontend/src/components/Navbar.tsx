@@ -8,15 +8,15 @@ export default function Navbar() {
 
   return (
     <nav className="border-b border-white/5 bg-[#0a0a1a]/80 backdrop-blur-md sticky top-0 z-50">
-      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 text-xl font-bold">
-          <span className="text-2xl">⚗️</span>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-2 text-lg sm:text-xl font-bold">
+          <span className="text-xl sm:text-2xl">⚗️</span>
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-purple-400">
             FastChem
           </span>
         </Link>
-        <div className="flex items-center gap-6 text-sm text-gray-400">
-          <Link href="/" className="hover:text-white transition-colors">
+        <div className="flex items-center gap-3 sm:gap-6 text-xs sm:text-sm text-gray-400">
+          <Link href="/" className="hover:text-white transition-colors hidden sm:inline">
             หน้าหลัก
           </Link>
           <Link
@@ -28,24 +28,24 @@ export default function Navbar() {
           {loading ? (
             <div className="w-16 h-8 bg-white/5 rounded-lg animate-pulse" />
           ) : user ? (
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               <Link
                 href={`/profile/${user.username}`}
-                className="text-violet-400 font-medium hover:text-violet-300 transition-colors"
+                className="text-violet-400 font-medium hover:text-violet-300 transition-colors truncate max-w-[80px] sm:max-w-none"
               >
                 {user.username}
               </Link>
               <button
                 onClick={logout}
-                className="text-gray-500 hover:text-red-400 transition-colors"
+                className="text-gray-500 hover:text-red-400 transition-colors text-xs sm:text-sm"
               >
-                ออกจากระบบ
+                ออก
               </button>
             </div>
           ) : (
             <Link
               href="/login"
-              className="bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 px-4 py-1.5 rounded-lg font-medium transition-all"
+              className="bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 px-3 sm:px-4 py-1.5 rounded-lg font-medium transition-all text-xs sm:text-sm"
             >
               เข้าสู่ระบบ
             </Link>

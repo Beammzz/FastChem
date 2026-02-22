@@ -192,15 +192,17 @@ func (h *RankedHandler) handleMatchSession(conn *websocket.Conn, matchID int64, 
 		},
 	})
 
-	// Send first question
+	// Send first question (direct write is safe — outbound pump hasn't started yet)
 	h.sendNextQuestion(conn, matchID, userID)
+
+	// ── From this point, ALL writes go through sendChan to avoid concurrent writes ──
 
 	// Start disconnect checker goroutine for this match
 	stopChecker := make(chan struct{})
 	go h.disconnectChecker(matchID, userID, stopChecker)
 	defer close(stopChecker)
 
-	// Start the outbound message pump (for server-initiated messages)
+	// Start the outbound message pump (only writer to conn after this point)
 	outDone := make(chan struct{})
 	go func() {
 		defer close(outDone)
@@ -227,16 +229,23 @@ func (h *RankedHandler) handleMatchSession(conn *websocket.Conn, matchID int64, 
 
 		switch msg.Type {
 		case models.EventPing:
-			sendWSMessage(conn, models.WSMessage{Type: models.EventPong})
+			// Route through channel to avoid concurrent writes
+			select {
+			case sendChan <- models.WSMessage{Type: models.EventPong}:
+			default:
+			}
 
 		case models.EventSubmitAnswer:
-			h.handleSubmitAnswer(conn, matchID, userID, msg.Payload)
+			h.handleSubmitAnswer(sendChan, matchID, userID, msg.Payload)
 
 		default:
-			sendWSMessage(conn, models.WSMessage{
+			select {
+			case sendChan <- models.WSMessage{
 				Type:    models.EventError,
 				Payload: models.ErrorPayload{Message: "Unknown event type"},
-			})
+			}:
+			default:
+			}
 		}
 	}
 
@@ -245,7 +254,8 @@ func (h *RankedHandler) handleMatchSession(conn *websocket.Conn, matchID int64, 
 }
 
 // handleSubmitAnswer processes a SUBMIT_ANSWER event from a player.
-func (h *RankedHandler) handleSubmitAnswer(conn *websocket.Conn, matchID int64, userID int64, rawPayload interface{}) {
+// All responses are routed through sendChan to avoid concurrent WebSocket writes.
+func (h *RankedHandler) handleSubmitAnswer(sendChan chan models.WSMessage, matchID int64, userID int64, rawPayload interface{}) {
 	// Parse payload
 	payloadBytes, err := json.Marshal(rawPayload)
 	if err != nil {
@@ -253,10 +263,13 @@ func (h *RankedHandler) handleSubmitAnswer(conn *websocket.Conn, matchID int64, 
 	}
 	var payload models.SubmitAnswerPayload
 	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		sendWSMessage(conn, models.WSMessage{
+		select {
+		case sendChan <- models.WSMessage{
 			Type:    models.EventError,
 			Payload: models.ErrorPayload{Message: "Invalid answer payload"},
-		})
+		}:
+		default:
+		}
 		return
 	}
 
@@ -265,21 +278,28 @@ func (h *RankedHandler) handleSubmitAnswer(conn *websocket.Conn, matchID int64, 
 		matchID, userID, payload.Index, payload.SelectedIndex,
 	)
 	if err != nil || result == nil {
-		sendWSMessage(conn, models.WSMessage{
+		select {
+		case sendChan <- models.WSMessage{
 			Type:    models.EventError,
 			Payload: models.ErrorPayload{Message: "Failed to process answer"},
-		})
+		}:
+		default:
+		}
 		return
 	}
 
-	// Send answer result
-	sendWSMessage(conn, models.WSMessage{
+	// Send answer result via channel (avoids concurrent writes with outbound pump)
+	select {
+	case sendChan <- models.WSMessage{
 		Type:    "ANSWER_RESULT",
 		Payload: result,
-	})
+	}:
+	case <-time.After(5 * time.Second):
+		log.Printf("ranked: timed out sending ANSWER_RESULT to user %d (channel full)", userID)
+	}
 
 	// Notify opponent of progress update (via their send channel)
-	h.notifyOpponentProgress(matchID, userID, result)
+	h.notifyOpponentProgress(matchID, userID)
 
 	if playerDone {
 		// Check if both players are done
@@ -288,13 +308,12 @@ func (h *RankedHandler) handleSubmitAnswer(conn *websocket.Conn, matchID int64, 
 		}
 		// If only this player is done, they wait for opponent
 	} else {
-		// Send next question after a brief delay
-		time.Sleep(500 * time.Millisecond)
-		h.sendNextQuestion(conn, matchID, userID)
+		// Try to advance both players to the next question (synchronized)
+		go h.tryAdvanceBothPlayers(matchID)
 	}
 }
 
-// sendNextQuestion sends the next question to a player.
+// sendNextQuestion sends the next question to a single player (used for the first question only).
 func (h *RankedHandler) sendNextQuestion(conn *websocket.Conn, matchID int64, userID int64) {
 	q, idx, ok := h.matchService.GetCurrentQuestion(matchID, userID)
 	if !ok {
@@ -317,41 +336,177 @@ func (h *RankedHandler) sendNextQuestion(conn *websocket.Conn, matchID int64, us
 	})
 
 	// Start a timer for this question — auto-submit if player doesn't answer
+	h.startQuestionTimeout(conn, matchID, userID, idx, q.TimeLimit)
+}
+
+// startQuestionTimeout starts a goroutine that auto-submits a timeout answer
+// if the player hasn't answered within the time limit.
+func (h *RankedHandler) startQuestionTimeout(conn *websocket.Conn, matchID int64, userID int64, questionIdx int, timeLimitSec int) {
 	go func() {
-		timer := time.NewTimer(time.Duration(q.TimeLimit) * time.Second)
+		timer := time.NewTimer(time.Duration(timeLimitSec) * time.Second)
 		defer timer.Stop()
 
 		<-timer.C
 
 		// Check if the player has already answered this question
 		_, currentIdx, exists := h.matchService.GetCurrentQuestion(matchID, userID)
-		if !exists || currentIdx != idx {
+		if !exists || currentIdx != questionIdx {
 			return // already answered or match ended
 		}
 
 		// Auto-submit with wrong answer (timeout)
-		result, playerDone, _ := h.matchService.SubmitAnswer(matchID, userID, idx, -1)
-		if result != nil {
-			sendWSMessage(conn, models.WSMessage{
-				Type:    "ANSWER_RESULT",
-				Payload: result,
-			})
-			h.notifyOpponentProgress(matchID, userID, result)
+		result, playerDone, _ := h.matchService.SubmitAnswer(matchID, userID, questionIdx, -1)
+		if result == nil {
+			return
+		}
 
-			if playerDone {
-				if h.matchService.FinalizeIfBothDone(matchID) {
-					h.sendMatchEnd(matchID)
-				}
-			} else {
-				time.Sleep(500 * time.Millisecond)
-				h.sendNextQuestion(conn, matchID, userID)
+		// Send answer result via the player's send channel (safe from goroutine)
+		match, ok := h.matchService.GetMatch(matchID)
+		if !ok {
+			return
+		}
+		var sendChan chan models.WSMessage
+		if userID == match.Player1.UserID {
+			sendChan = match.P1Send
+		} else {
+			sendChan = match.P2Send
+		}
+		select {
+		case sendChan <- models.WSMessage{Type: "ANSWER_RESULT", Payload: result}:
+		case <-time.After(5 * time.Second):
+			log.Printf("ranked: timed out sending timeout ANSWER_RESULT to user %d in match %d", userID, matchID)
+		}
+
+		h.notifyOpponentProgress(matchID, userID)
+
+		if playerDone {
+			if h.matchService.FinalizeIfBothDone(matchID) {
+				h.sendMatchEnd(matchID)
 			}
+		} else {
+			// Try to advance both players (handles sync)
+			h.tryAdvanceBothPlayers(matchID)
+		}
+	}()
+}
+
+// tryAdvanceBothPlayers checks if both players have answered the current question.
+// If so, sends the next question to both after a brief delay.
+// It retries a few times in case the other player hasn't finished yet.
+func (h *RankedHandler) tryAdvanceBothPlayers(matchID int64) {
+	// Brief delay for answer result display
+	time.Sleep(2 * time.Second)
+
+	// Retry up to 3 times (with 1s gaps) in case the other player's answer
+	// is still being processed concurrently.
+	var ready bool
+	var idx int
+	var q *services.RankedQuestion
+	for attempt := 0; attempt < 3; attempt++ {
+		ready, idx, q = h.matchService.TryAdvanceQuestion(matchID)
+		if ready && q != nil {
+			break
+		}
+		// Check if match is still active before retrying
+		match, ok := h.matchService.GetMatch(matchID)
+		if !ok || match.Status != "active" {
+			return
+		}
+		if attempt < 2 {
+			time.Sleep(1 * time.Second)
+		}
+	}
+	if !ready || q == nil {
+		return
+	}
+
+	match, ok := h.matchService.GetMatch(matchID)
+	if !ok {
+		return
+	}
+
+	msg := models.WSMessage{
+		Type: models.EventQuestionStart,
+		Payload: models.QuestionStartPayload{
+			Index:      idx,
+			Question:   q.Question,
+			Choices:    q.Choices,
+			TimeLimit:  q.TimeLimit,
+			Difficulty: q.Difficulty,
+			Category:   q.Category,
+		},
+	}
+
+	// Send to both players via their channels (with timeout to prevent silent drops)
+	select {
+	case match.P1Send <- msg:
+	case <-time.After(5 * time.Second):
+		log.Printf("ranked: timed out sending QUESTION_START to P1 in match %d", matchID)
+	}
+	select {
+	case match.P2Send <- msg:
+	case <-time.After(5 * time.Second):
+		log.Printf("ranked: timed out sending QUESTION_START to P2 in match %d", matchID)
+	}
+
+	// Start timeout timers for both players on this question
+	h.startSyncedQuestionTimeout(matchID, match.Player1.UserID, idx, q.TimeLimit)
+	h.startSyncedQuestionTimeout(matchID, match.Player2.UserID, idx, q.TimeLimit)
+}
+
+// startSyncedQuestionTimeout starts an auto-timeout for a synchronized question.
+// Unlike startQuestionTimeout, this sends results via the send channel (not conn directly).
+func (h *RankedHandler) startSyncedQuestionTimeout(matchID int64, userID int64, questionIdx int, timeLimitSec int) {
+	go func() {
+		timer := time.NewTimer(time.Duration(timeLimitSec) * time.Second)
+		defer timer.Stop()
+		<-timer.C
+
+		_, currentIdx, exists := h.matchService.GetCurrentQuestion(matchID, userID)
+		if !exists || currentIdx != questionIdx {
+			return
+		}
+
+		result, playerDone, _ := h.matchService.SubmitAnswer(matchID, userID, questionIdx, -1)
+		if result == nil {
+			return
+		}
+
+		match, ok := h.matchService.GetMatch(matchID)
+		if !ok {
+			return
+		}
+
+		var sendChan chan models.WSMessage
+		if userID == match.Player1.UserID {
+			sendChan = match.P1Send
+		} else {
+			sendChan = match.P2Send
+		}
+		select {
+		case sendChan <- models.WSMessage{Type: "ANSWER_RESULT", Payload: result}:
+		case <-time.After(5 * time.Second):
+			log.Printf("ranked: timed out sending ANSWER_RESULT to user %d in match %d", userID, matchID)
+		}
+
+		h.notifyOpponentProgress(matchID, userID)
+
+		if playerDone {
+			if h.matchService.FinalizeIfBothDone(matchID) {
+				h.sendMatchEnd(matchID)
+			}
+		} else {
+			h.tryAdvanceBothPlayers(matchID)
 		}
 	}()
 }
 
 // notifyOpponentProgress sends a progress update to the opponent.
-func (h *RankedHandler) notifyOpponentProgress(matchID int64, userID int64, result *models.AnswerResultPayload) {
+// It sends the answering player's (userID) stats to their opponent.
+func (h *RankedHandler) notifyOpponentProgress(matchID int64, userID int64) {
+	// Get the answering player's progress
+	answered, totalScore := h.matchService.GetPlayerProgress(matchID, userID)
+
 	match, ok := h.matchService.GetMatch(matchID)
 	if !ok {
 		return
@@ -368,8 +523,8 @@ func (h *RankedHandler) notifyOpponentProgress(matchID int64, userID int64, resu
 	msg := models.WSMessage{
 		Type: "OPPONENT_PROGRESS",
 		Payload: map[string]interface{}{
-			"answered":   result.OpponentAnswered,
-			"totalScore": result.OpponentScore,
+			"answered":   answered,
+			"totalScore": totalScore,
 		},
 	}
 	select {
@@ -393,13 +548,15 @@ func (h *RankedHandler) sendMatchEnd(matchID int64) {
 	if p1Payload != nil {
 		select {
 		case match.P1Send <- models.WSMessage{Type: models.EventMatchEnd, Payload: p1Payload}:
-		default:
+		case <-time.After(5 * time.Second):
+			log.Printf("ranked: timed out sending MATCH_END to P1 in match %d", matchID)
 		}
 	}
 	if p2Payload != nil {
 		select {
 		case match.P2Send <- models.WSMessage{Type: models.EventMatchEnd, Payload: p2Payload}:
-		default:
+		case <-time.After(5 * time.Second):
+			log.Printf("ranked: timed out sending MATCH_END to P2 in match %d", matchID)
 		}
 	}
 

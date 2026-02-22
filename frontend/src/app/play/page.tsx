@@ -10,10 +10,10 @@ export default function PlayPage() {
     <div className="min-h-screen bg-[#0a0a1a] text-white">
       <Navbar />
 
-      <div className="max-w-4xl mx-auto px-6 pt-12 pb-16">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-8 sm:pt-12 pb-16">
         {/* Header */}
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-extrabold mb-2">
+        <div className="text-center mb-8 sm:mb-10">
+          <h1 className="text-2xl sm:text-4xl font-extrabold mb-2">
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-purple-400">
               เลือกโหมดเกม
             </span>
@@ -25,7 +25,7 @@ export default function PlayPage() {
           {/* Single Player */}
           <button
             onClick={() => router.push("/play/singleplayer")}
-            className="text-left bg-[#12122a] border border-white/5 rounded-2xl p-8 hover:border-violet-500/40 transition-all group cursor-pointer"
+            className="text-left bg-[#12122a] border border-white/5 rounded-2xl p-5 sm:p-8 hover:border-violet-500/40 transition-all group cursor-pointer"
           >
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
@@ -57,38 +57,40 @@ export default function PlayPage() {
             </div>
           </button>
 
-          {/* Online 1vs1 (Coming Soon) */}
-          <div className="bg-[#12122a] border border-white/5 rounded-2xl p-8 opacity-50 relative overflow-hidden">
-            <div className="absolute top-4 right-4 bg-yellow-500/10 text-yellow-400 text-xs font-bold px-3 py-1 rounded-full">
-              เร็วๆ นี้
-            </div>
+          {/* Online 1vs1 */}
+          <button
+            onClick={() => router.push("/play/ranked")}
+            className="text-left bg-[#12122a] border border-white/5 rounded-2xl p-5 sm:p-8 hover:border-blue-500/40 transition-all group cursor-pointer"
+          >
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center text-2xl">
+              <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
                 ⚔️
               </div>
               <div>
                 <h2 className="text-xl font-bold text-white">ออนไลน์ 1vs1</h2>
-                <p className="text-xs text-gray-500">Multiplayer</p>
+                <p className="text-xs text-gray-500">Ranked Multiplayer</p>
               </div>
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-6">
               ท้าทายผู้เล่นคนอื่นแบบเรียลไทม์ แข่งขันตัวต่อตัว
-              และไต่อันดับกระดานผู้นำ
+              และไต่อันดับ Rating ด้วยระบบ ELO
             </p>
-            <div className="space-y-3 mb-6">
-              <div className="bg-white/5 rounded-lg p-3 flex items-center gap-3">
-                <span className="text-lg">🏆</span>
-                <span className="text-sm text-gray-400">จับคู่แบบเรียลไทม์</span>
-              </div>
-              <div className="bg-white/5 rounded-lg p-3 flex items-center gap-3">
-                <span className="text-lg">📊</span>
-                <span className="text-sm text-gray-400">กระดานผู้นำ & อันดับ</span>
-              </div>
+            <div className="flex flex-wrap gap-2 mb-6">
+              <span className="text-xs bg-blue-500/10 text-blue-400 px-2.5 py-1 rounded-full">
+                จับคู่เรียลไทม์
+              </span>
+              <span className="text-xs bg-blue-500/10 text-blue-400 px-2.5 py-1 rounded-full">
+                ระบบ ELO Rating
+              </span>
+              <span className="text-xs bg-blue-500/10 text-blue-400 px-2.5 py-1 rounded-full">
+                10 ข้อ 3 ระดับ
+              </span>
             </div>
-            <div className="flex items-center text-gray-500 text-sm font-medium">
-              <span>กำลังพัฒนา...</span>
+            <div className="flex items-center text-blue-400 text-sm font-medium group-hover:gap-2 transition-all gap-1">
+              <span>เลือกโหมดนี้</span>
+              <span>→</span>
             </div>
-          </div>
+          </button>
         </div>
       </div>
     </div>

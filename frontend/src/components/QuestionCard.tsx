@@ -93,27 +93,27 @@ export default function QuestionCard({
       </div>
 
       {/* Question text */}
-      <div className="bg-[#12122a] border border-white/5 rounded-2xl p-8 mb-6">
-        <p className="text-xl md:text-2xl font-semibold text-white text-center leading-relaxed">
+      <div className="bg-[#12122a] border border-white/5 rounded-2xl p-4 sm:p-8 mb-4 sm:mb-6">
+        <p className="text-base sm:text-xl md:text-2xl font-semibold text-white text-center leading-relaxed">
           {question.question}
         </p>
       </div>
 
       {/* Answer choices */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
         {question.choices.map((choice, index) => (
           <button
             key={index}
             onClick={() => onAnswer(index)}
             disabled={selectedIndex !== null}
             className={`
-              border rounded-xl px-6 py-5 text-lg font-bold
+              border rounded-xl px-4 py-3 sm:px-6 sm:py-5 text-sm sm:text-lg font-bold
               transition-all duration-150
               ${selectedIndex === null ? "hover:scale-[1.02] active:scale-[0.98]" : ""}
               ${getChoiceStyle(index)}
             `}
           >
-            <span className="text-sm opacity-40 mr-2">
+            <span className="text-xs sm:text-sm opacity-40 mr-2">
               {String.fromCharCode(65 + index)}
             </span>
             {getChoicePrefix(index)}

@@ -30,17 +30,18 @@ type RankedPlayerState struct {
 
 // ActiveRankedMatch holds the full in-memory state of a ranked match.
 type ActiveRankedMatch struct {
-	mu             sync.Mutex
-	MatchID        int64
-	Seed           int64
-	Player1        *RankedPlayerState
-	Player2        *RankedPlayerState
-	Questions      *RankedQuestionSet
-	Status         string // "waiting", "active", "finished", "abandoned"
-	CurrentP1Index int    // current question index for player 1
-	CurrentP2Index int    // current question index for player 2
-	CreatedAt      time.Time
-	FinishedAt     *time.Time
+	mu              sync.Mutex
+	MatchID         int64
+	Seed            int64
+	Player1         *RankedPlayerState
+	Player2         *RankedPlayerState
+	Questions       *RankedQuestionSet
+	Status          string // "waiting", "active", "finished", "abandoned"
+	CurrentP1Index  int    // current question index for player 1
+	CurrentP2Index  int    // current question index for player 2
+	LastSyncedIndex int    // last question index sent to both players (prevents double-advance)
+	CreatedAt       time.Time
+	FinishedAt      *time.Time
 
 	// Channels to notify WebSocket handlers
 	P1Send chan models.WSMessage
@@ -99,13 +100,14 @@ func (rms *RankedMatchService) CreateMatch(
 			Connected: true,
 			Results:   make([]models.RankedQuestionResult, 0, models.RankedQuestionsPerMatch),
 		},
-		Questions:      questions,
-		Status:         "active",
-		CurrentP1Index: 0,
-		CurrentP2Index: 0,
-		CreatedAt:      time.Now(),
-		P1Send:         make(chan models.WSMessage, 32),
-		P2Send:         make(chan models.WSMessage, 32),
+		Questions:       questions,
+		Status:          "active",
+		CurrentP1Index:  0,
+		CurrentP2Index:  0,
+		LastSyncedIndex: 0, // question 0 is sent individually at match start
+		CreatedAt:       time.Now(),
+		P1Send:          make(chan models.WSMessage, 32),
+		P2Send:          make(chan models.WSMessage, 32),
 	}
 
 	rms.mu.Lock()
@@ -298,6 +300,65 @@ func (rms *RankedMatchService) GetCurrentQuestion(matchID int64, userID int64) (
 	}
 
 	return &match.Questions.Questions[idx], idx, true
+}
+
+// TryAdvanceQuestion checks if both players have answered the current question
+// and are ready to advance. If so, it claims the advance (preventing duplicates),
+// sets question start times, and returns the next question.
+// Returns (ready, questionIndex, question).
+func (rms *RankedMatchService) TryAdvanceQuestion(matchID int64) (bool, int, *RankedQuestion) {
+	match, ok := rms.GetMatch(matchID)
+	if !ok {
+		return false, 0, nil
+	}
+	match.mu.Lock()
+	defer match.mu.Unlock()
+
+	if match.Status != "active" {
+		return false, 0, nil
+	}
+
+	p1Idx := match.CurrentP1Index
+	p2Idx := match.CurrentP2Index
+
+	// Both players must be at the same index (both answered the previous question)
+	if p1Idx != p2Idx {
+		return false, 0, nil
+	}
+
+	idx := p1Idx
+	if idx >= len(match.Questions.Questions) {
+		return false, idx, nil
+	}
+
+	// Prevent duplicate advance for the same index
+	if idx <= match.LastSyncedIndex {
+		return false, 0, nil
+	}
+	match.LastSyncedIndex = idx
+
+	// Set question start times for both players
+	now := time.Now()
+	match.Player1.QuestionStart = now
+	match.Player2.QuestionStart = now
+
+	q := match.Questions.Questions[idx]
+	return true, idx, &q
+}
+
+// GetPlayerProgress returns the answered count and total score for a player.
+func (rms *RankedMatchService) GetPlayerProgress(matchID int64, userID int64) (answered int, totalScore int) {
+	match, ok := rms.GetMatch(matchID)
+	if !ok {
+		return 0, 0
+	}
+	match.mu.Lock()
+	defer match.mu.Unlock()
+
+	if userID == match.Player1.UserID {
+		return match.Player1.Answered, match.Player1.TotalScore
+	}
+	return match.Player2.Answered, match.Player2.TotalScore
 }
 
 // HandleDisconnect marks a player as disconnected.

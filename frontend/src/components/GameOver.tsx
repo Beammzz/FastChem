@@ -116,22 +116,22 @@ export default function GameOver({
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-3">
-          <div className="bg-white/5 rounded-xl p-3">
+        <div className="grid grid-cols-4 gap-2 sm:gap-3">
+          <div className="bg-white/5 rounded-xl p-2 sm:p-3 overflow-hidden">
             <p className="text-[10px] text-gray-500 uppercase tracking-wider">คำถาม</p>
-            <p className="text-xl font-bold text-white tabular-nums">{finalAnswered}</p>
+            <p className="text-lg sm:text-xl font-bold text-white tabular-nums">{finalAnswered}</p>
           </div>
-          <div className="bg-white/5 rounded-xl p-3">
+          <div className="bg-white/5 rounded-xl p-2 sm:p-3 overflow-hidden">
             <p className="text-[10px] text-gray-500 uppercase tracking-wider">ถูกต้อง</p>
-            <p className="text-xl font-bold text-violet-400 tabular-nums">{finalCorrect}</p>
+            <p className="text-lg sm:text-xl font-bold text-violet-400 tabular-nums">{finalCorrect}</p>
           </div>
-          <div className="bg-white/5 rounded-xl p-3">
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider">ความแม่นยำ</p>
-            <p className="text-xl font-bold text-cyan-400 tabular-nums">{accuracy}%</p>
+          <div className="bg-white/5 rounded-xl p-2 sm:p-3 overflow-hidden">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider leading-tight">ความแม่นยำ</p>
+            <p className="text-lg sm:text-xl font-bold text-cyan-400 tabular-nums">{accuracy}%</p>
           </div>
-          <div className="bg-white/5 rounded-xl p-3">
+          <div className="bg-white/5 rounded-xl p-2 sm:p-3 overflow-hidden">
             <p className="text-[10px] text-gray-500 uppercase tracking-wider">Best Combo</p>
-            <p className="text-xl font-bold text-amber-400 tabular-nums">{finalBestCombo}x</p>
+            <p className="text-lg sm:text-xl font-bold text-amber-400 tabular-nums">{finalBestCombo}x</p>
           </div>
         </div>
 

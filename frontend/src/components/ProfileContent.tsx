@@ -3,16 +3,11 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import { fetchProfile } from "@/lib/api";
-import { ProfileResponse } from "@/types";
+import { fetchProfile, fetchRankedStats, fetchRankedHistory } from "@/lib/api";
+import { ProfileResponse, RankedStats, RankedMatchHistoryEntry } from "@/types";
 import { useAuth } from "@/components/AuthProvider";
 
-export default function ProfilePage({
-  params,
-}: {
-  params: { username: string };
-}) {
-  const { username } = params;
+export default function ProfileContent({ username }: { username: string }) {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -20,6 +15,11 @@ export default function ProfilePage({
   const { user } = useAuth();
 
   const isOwnProfile = user?.username?.toLowerCase() === username.toLowerCase();
+
+  const [rankedStats, setRankedStats] = useState<RankedStats | null>(null);
+  const [rankedHistory, setRankedHistory] = useState<RankedMatchHistoryEntry[]>(
+    []
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -29,6 +29,18 @@ export default function ProfilePage({
       .catch(() => setError("ไม่พบผู้ใช้นี้"))
       .finally(() => setLoading(false));
   }, [username, page]);
+
+  // Fetch ranked stats if it's the user's own profile
+  useEffect(() => {
+    if (isOwnProfile && user) {
+      fetchRankedStats()
+        .then(setRankedStats)
+        .catch(() => setRankedStats(null));
+      fetchRankedHistory()
+        .then(setRankedHistory)
+        .catch(() => setRankedHistory([]));
+    }
+  }, [isOwnProfile, user]);
 
   const totalPages = profile ? Math.ceil(profile.total / 10) : 0;
 
@@ -162,6 +174,108 @@ export default function ProfilePage({
             </div>
           </div>
         </div>
+
+        {/* Ranked Stats (own profile only) */}
+        {isOwnProfile && rankedStats && (
+          <div className="bg-[#12122a] border border-white/5 rounded-2xl p-6 mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-white">⚔️ สถิติ Ranked</h2>
+              <Link
+                href="/play/ranked"
+                className="text-xs text-blue-400 hover:underline"
+              >
+                เล่น Ranked →
+              </Link>
+            </div>
+            <div className="grid grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-extrabold text-blue-400">
+                  {rankedStats.rating}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Rating</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-extrabold text-violet-400">
+                  {rankedStats.highestRating}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">สูงสุด</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-extrabold text-green-400">
+                  {rankedStats.rankedWins}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">ชนะ</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-extrabold text-red-400">
+                  {rankedStats.rankedLosses}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">แพ้</div>
+              </div>
+            </div>
+
+            {/* Ranked match history */}
+            {rankedHistory.length > 0 && (
+              <div className="mt-6 border-t border-white/5 pt-4">
+                <h3 className="text-sm text-gray-500 font-medium mb-3">
+                  ประวัติ Ranked ล่าสุด
+                </h3>
+                <div className="space-y-2">
+                  {rankedHistory.slice(0, 5).map((match) => {
+                    const opponent =
+                      match.player1Name === profile?.user.username
+                        ? match.player2Name
+                        : match.player1Name;
+                    const myScore =
+                      match.player1Name === profile?.user.username
+                        ? match.player1Score
+                        : match.player2Score;
+                    const theirScore =
+                      match.player1Name === profile?.user.username
+                        ? match.player2Score
+                        : match.player1Score;
+                    return (
+                      <div
+                        key={match.matchId}
+                        className={`flex items-center justify-between px-4 py-2 rounded-lg ${
+                          match.won
+                            ? "bg-green-500/5 border border-green-500/10"
+                            : "bg-red-500/5 border border-red-500/10"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-xs font-bold px-2 py-0.5 rounded ${
+                              match.won
+                                ? "bg-green-500/20 text-green-400"
+                                : "bg-red-500/20 text-red-400"
+                            }`}
+                          >
+                            {match.won ? "ชนะ" : "แพ้"}
+                          </span>
+                          <span className="text-sm text-gray-300">
+                            vs{" "}
+                            <Link
+                              href={`/profile/${opponent}`}
+                              className="text-white hover:underline"
+                            >
+                              {opponent}
+                            </Link>
+                          </span>
+                        </div>
+                        <div className="text-sm tabular-nums">
+                          <span className="text-white font-bold">{myScore}</span>
+                          <span className="text-gray-600 mx-1">-</span>
+                          <span className="text-gray-400">{theirScore}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Game History */}
         <div className="bg-[#12122a] border border-white/5 rounded-2xl overflow-hidden">

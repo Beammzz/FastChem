@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 import {
   Question,
@@ -14,6 +14,9 @@ import {
   MatchAnswerRequest,
   MatchAnswerResponse,
   EndMatchResponse,
+  RankedStats,
+  RankedMatchHistoryEntry,
+  RankedLeaderboardEntry,
 } from "@/types";
 
 // Helper to get auth headers
@@ -217,4 +220,49 @@ export async function endMatch(matchId: number): Promise<EndMatchResponse> {
     throw new Error(data.error || "Failed to end match");
   }
   return res.json();
+}
+
+// ─── Ranked API ────────────────────────────────────────────────
+
+export function getRankedWebSocketURL(): string {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  // Derive WebSocket URL from the current page origin (works for both dev and prod)
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const host = window.location.host;
+  return `${protocol}//${host}/api/ranked/ws?token=${token || ""}`;
+}
+
+export async function fetchRankedStats(): Promise<RankedStats> {
+  const res = await fetch(`${API_BASE}/api/ranked/stats`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) {
+    throw new Error("Failed to fetch ranked stats");
+  }
+  return res.json();
+}
+
+export async function fetchRankedHistory(): Promise<RankedMatchHistoryEntry[]> {
+  const res = await fetch(`${API_BASE}/api/ranked/history`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) {
+    throw new Error("Failed to fetch ranked history");
+  }
+  const data = await res.json();
+  return data.history;
+}
+
+export async function fetchRankedLeaderboard(): Promise<
+  RankedLeaderboardEntry[]
+> {
+  const res = await fetch(`${API_BASE}/api/ranked/leaderboard`, {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error("Failed to fetch ranked leaderboard");
+  }
+  const data = await res.json();
+  return data.entries;
 }

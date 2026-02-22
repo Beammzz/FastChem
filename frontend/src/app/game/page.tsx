@@ -10,6 +10,7 @@ import TimerBar from "@/components/TimerBar";
 import ScoreBoard from "@/components/ScoreBoard";
 import GameOver from "@/components/GameOver";
 import PeriodicTable from "@/components/PeriodicTable";
+import Calculator from "@/components/Calculator";
 
 function GameContent() {
   const searchParams = useSearchParams();
@@ -148,18 +149,20 @@ function GameContent() {
     <div className="min-h-screen bg-[#0a0a1a] text-white flex flex-col">
       {/* Compact game header */}
       <div className="border-b border-white/5 bg-[#0a0a1a]/80 backdrop-blur-md">
-        <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-lg font-bold">
+        <div className="max-w-3xl mx-auto px-3 sm:px-6 py-2 sm:py-0 sm:h-14 flex flex-col sm:flex-row items-center justify-between gap-1 sm:gap-0">
+          <div className="hidden sm:flex items-center gap-2 text-lg font-bold">
             <span className="text-xl">⚗️</span>
             <span className="text-violet-400 text-sm font-medium">FastChem</span>
           </div>
-          <TimerBar timeLeft={timeLeft} totalTime={timeLimit} />
-          <ScoreBoard score={score} totalAnswered={totalAnswered} correctAnswers={correctAnswers} totalQuestions={numQuestions} combo={combo} comboMultiplier={lastComboMultiplier} />
+          <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto justify-between sm:justify-end">
+            <TimerBar timeLeft={timeLeft} totalTime={timeLimit} />
+            <ScoreBoard score={score} totalAnswered={totalAnswered} correctAnswers={correctAnswers} totalQuestions={numQuestions} combo={combo} comboMultiplier={lastComboMultiplier} />
+          </div>
         </div>
       </div>
 
       {/* Question area */}
-      <div className="flex-1 flex items-center justify-center p-6">
+      <div className="flex-1 flex items-center justify-center p-3 sm:p-6 pb-16 sm:pb-6">
         <div className="w-full max-w-2xl">
           {loading ? (
             <div className="flex justify-center py-16">
@@ -185,8 +188,9 @@ function GameContent() {
         </div>
       </div>
 
-      {/* Mini Periodic Table */}
+      {/* Mini Periodic Table & Calculator */}
       <PeriodicTable />
+      <Calculator />
     </div>
   );
 }

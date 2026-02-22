@@ -33,7 +33,7 @@ export default function PeriodicTable({ enabled = true }: PeriodicTableProps) {
       {/* Toggle button */}
       <button
         onClick={() => setOpen(!open)}
-        className={`fixed bottom-4 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold shadow-lg transition-all
+        className={`fixed bottom-20 right-3 sm:bottom-4 sm:right-4 z-50 w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-base sm:text-lg font-bold shadow-lg transition-all
           ${
             open
               ? "bg-violet-600 text-white shadow-violet-500/30"
@@ -46,10 +46,10 @@ export default function PeriodicTable({ enabled = true }: PeriodicTableProps) {
 
       {/* Overlay */}
       {open && (
-        <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-2 sm:p-4">
-          <div className="bg-[#0e0e20] border border-white/10 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-auto shadow-2xl">
+        <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-[#0e0e20] border border-white/10 rounded-2xl w-full max-w-4xl max-h-[90vh] sm:max-h-[85vh] overflow-auto shadow-2xl">
             {/* Header */}
-            <div className="sticky top-0 bg-[#0e0e20] border-b border-white/5 px-5 py-3 flex items-center justify-between z-10">
+            <div className="sticky top-0 bg-[#0e0e20] border-b border-white/5 px-4 py-2.5 sm:px-5 sm:py-3 flex items-center justify-between z-10">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 🧪 ตารางธาตุ
               </h3>
@@ -58,7 +58,7 @@ export default function PeriodicTable({ enabled = true }: PeriodicTableProps) {
                   setOpen(false);
                   setSelected(null);
                 }}
-                className="text-gray-500 hover:text-white text-xl leading-none"
+                className="text-gray-500 hover:text-white text-xl leading-none p-1"
               >
                 ✕
               </button>
@@ -66,31 +66,31 @@ export default function PeriodicTable({ enabled = true }: PeriodicTableProps) {
 
             {/* Selected element detail */}
             {selected && (
-              <div className="px-5 py-3 border-b border-white/5">
-                <div className="flex items-center gap-4">
+              <div className="px-4 py-2.5 sm:px-5 sm:py-3 border-b border-white/5">
+                <div className="flex items-center gap-3 sm:gap-4">
                   <div
-                    className={`w-16 h-16 rounded-xl flex flex-col items-center justify-center border ${
+                    className={`w-12 h-12 sm:w-16 sm:h-16 rounded-xl flex flex-col items-center justify-center border ${
                       CATEGORY_COLORS[selected.category]
                     }`}
                   >
-                    <span className="text-[10px] text-white/70">
+                    <span className="text-[8px] sm:text-[10px] text-white/70">
                       {selected.atomicNumber}
                     </span>
-                    <span className="text-xl font-bold text-white">
+                    <span className="text-base sm:text-xl font-bold text-white">
                       {selected.symbol}
                     </span>
-                    <span className="text-[9px] text-white/60">
+                    <span className="text-[7px] sm:text-[9px] text-white/60">
                       {selected.atomicMass}
                     </span>
                   </div>
-                  <div>
-                    <div className="text-white font-bold text-lg">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-white font-bold text-sm sm:text-lg truncate">
                       {selected.name}{" "}
-                      <span className="text-gray-400 font-normal text-sm">
+                      <span className="text-gray-400 font-normal text-xs sm:text-sm">
                         ({selected.nameTH})
                       </span>
                     </div>
-                    <div className="text-xs text-gray-500 mt-0.5">
+                    <div className="text-[10px] sm:text-xs text-gray-500 mt-0.5">
                       เลขอะตอม {selected.atomicNumber} · มวลอะตอม{" "}
                       {selected.atomicMass} · กลุ่ม {selected.group} · คาบ{" "}
                       {selected.period}
@@ -110,14 +110,14 @@ export default function PeriodicTable({ enabled = true }: PeriodicTableProps) {
             )}
 
             {/* Grid */}
-            <div className="p-4 overflow-x-auto">
-              <div className="min-w-[700px]">
+            <div className="p-2 sm:p-4">
+              <div className="w-full">
                 {/* Group numbers header */}
-                <div className="grid grid-cols-18 gap-[2px] mb-1">
+                <div className="grid grid-cols-18 gap-[1px] sm:gap-[2px] mb-1">
                   {Array.from({ length: 18 }, (_, i) => (
                     <div
                       key={i}
-                      className="text-[9px] text-gray-600 text-center"
+                      className="text-[7px] sm:text-[9px] text-gray-600 text-center"
                     >
                       {i + 1}
                     </div>
@@ -126,7 +126,7 @@ export default function PeriodicTable({ enabled = true }: PeriodicTableProps) {
 
                 {/* Element rows */}
                 {grid.map((row, rowIdx) => (
-                  <div key={rowIdx} className="grid grid-cols-18 gap-[2px] mb-[2px]">
+                  <div key={rowIdx} className="grid grid-cols-18 gap-[1px] sm:gap-[2px] mb-[1px] sm:mb-[2px]">
                     {row.map((el, colIdx) => {
                       if (!el) {
                         return <div key={colIdx} className="aspect-square" />;
@@ -138,7 +138,7 @@ export default function PeriodicTable({ enabled = true }: PeriodicTableProps) {
                           onClick={() =>
                             setSelected(isSelected ? null : el)
                           }
-                          className={`aspect-square rounded-sm border flex flex-col items-center justify-center transition-all text-white cursor-pointer hover:scale-110 hover:z-10 ${
+                          className={`aspect-square rounded-sm border flex flex-col items-center justify-center transition-all text-white cursor-pointer active:scale-95 sm:hover:scale-110 sm:hover:z-10 ${
                             CATEGORY_COLORS[el.category]
                           } ${
                             isSelected
@@ -147,10 +147,10 @@ export default function PeriodicTable({ enabled = true }: PeriodicTableProps) {
                           }`}
                           title={`${el.name} (${el.nameTH})`}
                         >
-                          <span className="text-[7px] leading-none opacity-70">
+                          <span className="text-[5px] sm:text-[7px] leading-none opacity-70">
                             {el.atomicNumber}
                           </span>
-                          <span className="text-[11px] font-bold leading-tight">
+                          <span className="text-[8px] sm:text-[11px] font-bold leading-tight">
                             {el.symbol}
                           </span>
                         </button>
@@ -161,15 +161,15 @@ export default function PeriodicTable({ enabled = true }: PeriodicTableProps) {
               </div>
 
               {/* Legend */}
-              <div className="flex flex-wrap gap-2 mt-4 justify-center">
+              <div className="flex flex-wrap gap-1.5 sm:gap-2 mt-3 sm:mt-4 justify-center">
                 {(Object.keys(CATEGORY_LABELS) as ElementCategory[]).map(
                   (cat) => (
                     <div
                       key={cat}
-                      className="flex items-center gap-1.5 text-[10px] text-gray-400"
+                      className="flex items-center gap-1 sm:gap-1.5 text-[8px] sm:text-[10px] text-gray-400"
                     >
                       <div
-                        className={`w-3 h-3 rounded-sm border ${CATEGORY_COLORS[cat]}`}
+                        className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm border ${CATEGORY_COLORS[cat]}`}
                       />
                       {CATEGORY_LABELS[cat]}
                     </div>

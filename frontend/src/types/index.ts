@@ -174,3 +174,129 @@ export interface ProfileResponse {
   page: number;
   total: number;
 }
+
+// ─── Ranked types ────────────────────────────────────────────────
+
+export type RankedGamePhase =
+  | "idle"
+  | "queuing"
+  | "matched"
+  | "playing"
+  | "finished"
+  | "error";
+
+// WebSocket event types (mirror backend)
+export type WSEventType =
+  | "MATCH_FOUND"
+  | "MATCH_START"
+  | "QUESTION_START"
+  | "SUBMIT_ANSWER"
+  | "ANSWER_RESULT"
+  | "MATCH_END"
+  | "OPPONENT_PROGRESS"
+  | "ERROR"
+  | "PING"
+  | "PONG"
+  | "QUEUE_JOINED";
+
+export interface WSMessage {
+  type: WSEventType;
+  payload?: unknown;
+}
+
+export interface MatchFoundPayload {
+  matchId: number;
+  opponentId: number;
+  opponent: string;
+}
+
+export interface MatchStartPayload {
+  matchId: number;
+  totalQuestions: number;
+}
+
+export interface QuestionStartPayload {
+  index: number;
+  question: string;
+  choices: string[];
+  timeLimit: number;
+  difficulty: string;
+  category: string;
+}
+
+export interface SubmitAnswerPayload {
+  index: number;
+  selectedIndex: number;
+}
+
+export interface AnswerResultPayload {
+  index: number;
+  correct: boolean;
+  correctIndex: number;
+  scoreEarned: number;
+  speedBonus: number;
+  comboMultiplier: number;
+  combo: number;
+  totalScore: number;
+  timedOut: boolean;
+  timeSpent: number;
+  opponentAnswered: number;
+  opponentScore: number;
+}
+
+export interface MatchEndPayload {
+  matchId: number;
+  winner: string;
+  winnerId: number;
+  player1: MatchEndPlayerSummary;
+  player2: MatchEndPlayerSummary;
+  ratingChange: number;
+  newRating: number;
+}
+
+export interface MatchEndPlayerSummary {
+  userId: number;
+  username: string;
+  totalScore: number;
+  correctAnswers: number;
+  hardScore: number;
+  totalTime: number;
+  bestCombo: number;
+}
+
+export interface OpponentProgressPayload {
+  answered: number;
+  totalScore: number;
+}
+
+export interface RankedStats {
+  rating: number;
+  rankedWins: number;
+  rankedLosses: number;
+  highestRating: number;
+}
+
+export interface RankedMatchHistoryEntry {
+  matchId: number;
+  player1Id: number;
+  player2Id: number;
+  player1Score: number;
+  player2Score: number;
+  winnerId: number | null;
+  status: string;
+  createdAt: string;
+  finishedAt: string | null;
+  player1Name: string;
+  player2Name: string;
+  won: boolean;
+}
+
+export interface RankedLeaderboardEntry {
+  rank: number;
+  username: string;
+  userId: number;
+  rating: number;
+  wins: number;
+  losses: number;
+  highestRating: number;
+}

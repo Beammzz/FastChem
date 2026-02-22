@@ -2,7 +2,10 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -45,7 +48,7 @@ func main() {
 
 	// CORS configuration
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://127.0.0.1:3000"},
+		AllowOrigins:     []string{"http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:8080", "https://fastchem.takumihomelab.works"},
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		AllowCredentials: true,
@@ -132,6 +135,73 @@ func main() {
 			ranked.GET("/leaderboard", rankedHandler.GetRankedLeaderboard)
 		}
 	}
+
+	// ── Serve the Next.js static export (frontend) ──────────────
+	// Resolve the frontend dist directory relative to the binary or CWD.
+	staticDir := os.Getenv("FRONTEND_DIR")
+	if staticDir == "" {
+		// Default: assume project root layout  <root>/backend  and  <root>/frontend/out
+		exe, _ := os.Executable()
+		staticDir = filepath.Join(filepath.Dir(exe), "..", "frontend", "out")
+	}
+	// Check if static dir exists; if not, try relative to cwd
+	if _, err := os.Stat(staticDir); os.IsNotExist(err) {
+		staticDir = filepath.Join(".", "..", "frontend", "out")
+	}
+
+	log.Printf("Serving frontend from: %s", staticDir)
+
+	// Serve static assets (JS, CSS, images, etc.)
+	router.Use(func(c *gin.Context) {
+		// Skip API routes
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			c.Next()
+			return
+		}
+
+		// Try to serve the file directly
+		requestPath := c.Request.URL.Path
+		filePath := filepath.Join(staticDir, requestPath)
+
+		// If the path points to a file that exists, serve it
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			http.ServeFile(c.Writer, c.Request, filePath)
+			c.Abort()
+			return
+		}
+
+		// For directory paths or clean URLs, try serving index.html inside that dir
+		// (Next.js static export with trailingSlash creates  /about/index.html)
+		indexPath := filepath.Join(filePath, "index.html")
+		if _, err := os.Stat(indexPath); err == nil {
+			http.ServeFile(c.Writer, c.Request, indexPath)
+			c.Abort()
+			return
+		}
+
+		// For dynamic routes like /profile/username, try parent directories' index.html
+		// Next.js static export creates /profile/index.html but not /profile/username/index.html
+		parts := strings.Split(strings.Trim(requestPath, "/"), "/")
+		for i := len(parts) - 1; i >= 1; i-- {
+			parentIndex := filepath.Join(staticDir, strings.Join(parts[:i], "/"), "index.html")
+			if _, err := os.Stat(parentIndex); err == nil {
+				http.ServeFile(c.Writer, c.Request, parentIndex)
+				c.Abort()
+				return
+			}
+		}
+
+		// Fallback: serve the root index.html (SPA-like behaviour)
+		rootIndex := filepath.Join(staticDir, "index.html")
+		if _, err := os.Stat(rootIndex); err == nil {
+			http.ServeFile(c.Writer, c.Request, rootIndex)
+			c.Abort()
+			return
+		}
+
+		// Nothing found — let Gin return 404
+		c.Next()
+	})
 
 	log.Printf("FastChem backend starting on :%s", port)
 	if err := router.Run(":" + port); err != nil {
