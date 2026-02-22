@@ -197,7 +197,9 @@ export type WSEventType =
   | "ERROR"
   | "PING"
   | "PONG"
-  | "QUEUE_JOINED";
+  | "QUEUE_JOINED"
+  | "ROOM_CREATED"
+  | "ROOM_JOINED";
 
 export interface WSMessage {
   type: WSEventType;

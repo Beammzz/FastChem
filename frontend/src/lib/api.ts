@@ -266,3 +266,17 @@ export async function fetchRankedLeaderboard(): Promise<
   const data = await res.json();
   return data.entries;
 }
+
+// ─── Custom Room API ───────────────────────────────────────────
+
+export function getRoomWebSocketURL(action: string, code?: string): string {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const host = window.location.host;
+  let url = `${protocol}//${host}/api/room/ws?token=${token || ""}&action=${action}`;
+  if (code) {
+    url += `&code=${code}`;
+  }
+  return url;
+}

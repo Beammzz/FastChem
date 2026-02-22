@@ -21,7 +21,7 @@ export default function PlayPage() {
           <p className="text-gray-400">เลือกรูปแบบการเล่นที่ต้องการ</p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid md:grid-cols-3 gap-6">
           {/* Single Player */}
           <button
             onClick={() => router.push("/play/singleplayer")}
@@ -87,6 +87,41 @@ export default function PlayPage() {
               </span>
             </div>
             <div className="flex items-center text-blue-400 text-sm font-medium group-hover:gap-2 transition-all gap-1">
+              <span>เลือกโหมดนี้</span>
+              <span>→</span>
+            </div>
+          </button>
+
+          {/* Create Room */}
+          <button
+            onClick={() => router.push("/play/room")}
+            className="text-left bg-[#12122a] border border-white/5 rounded-2xl p-5 sm:p-8 hover:border-emerald-500/40 transition-all group cursor-pointer"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                🏠
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white">สร้างห้อง</h2>
+                <p className="text-xs text-gray-500">Custom Room</p>
+              </div>
+            </div>
+            <p className="text-gray-400 text-sm leading-relaxed mb-6">
+              สร้างห้องเล่นกับเพื่อน แชร์รหัส 6 หลักให้เพื่อนเข้าร่วม
+              เหมือน Ranked แต่ไม่มีผลต่อ Rating
+            </p>
+            <div className="flex flex-wrap gap-2 mb-6">
+              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full">
+                เล่นกับเพื่อน
+              </span>
+              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full">
+                รหัส 6 หลัก
+              </span>
+              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full">
+                ไม่กระทบ Rating
+              </span>
+            </div>
+            <div className="flex items-center text-emerald-400 text-sm font-medium group-hover:gap-2 transition-all gap-1">
               <span>เลือกโหมดนี้</span>
               <span>→</span>
             </div>

@@ -72,12 +72,17 @@ func main() {
 	matchmakingQueue := services.NewMatchmakingQueue(rankedMatchService)
 	rankedHandler := handlers.NewRankedHandler(rankedMatchService, matchmakingQueue)
 
+	// Initialize custom room service
+	roomService := services.NewRoomService(rankedMatchService)
+	roomHandler := handlers.NewRoomHandler(roomService, rankedMatchService)
+
 	// Periodically clean up stale ranked matches (no activity for 30 minutes)
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
 			rankedMatchService.CleanupStaleMatches(30 * time.Minute)
+			roomService.CleanupStaleRooms(15 * time.Minute)
 		}
 	}()
 
@@ -133,6 +138,13 @@ func main() {
 			ranked.GET("/stats", middleware.AuthRequired(), rankedHandler.GetRankedStats)
 			ranked.GET("/history", middleware.AuthRequired(), rankedHandler.GetRankedHistory)
 			ranked.GET("/leaderboard", rankedHandler.GetRankedLeaderboard)
+		}
+
+		// Custom room routes
+		room := api.Group("/room")
+		{
+			// WebSocket endpoint (auth via query param)
+			room.GET("/ws", roomHandler.HandleWebSocket)
 		}
 	}
 

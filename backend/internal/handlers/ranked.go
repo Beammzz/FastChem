@@ -206,8 +206,16 @@ func (h *RankedHandler) handleMatchSession(conn *websocket.Conn, matchID int64, 
 	outDone := make(chan struct{})
 	go func() {
 		defer close(outDone)
-		for msg := range sendChan {
-			if err := sendWSMessage(conn, msg); err != nil {
+		for {
+			select {
+			case msg, ok := <-sendChan:
+				if !ok {
+					return // channel closed
+				}
+				if err := sendWSMessage(conn, msg); err != nil {
+					return
+				}
+			case <-match.Done:
 				return
 			}
 		}
@@ -222,6 +230,13 @@ func (h *RankedHandler) handleMatchSession(conn *websocket.Conn, matchID int64, 
 			break
 		}
 
+		// If match was removed, stop processing
+		select {
+		case <-match.Done:
+			return
+		default:
+		}
+
 		var msg models.WSMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
 			continue
@@ -230,22 +245,16 @@ func (h *RankedHandler) handleMatchSession(conn *websocket.Conn, matchID int64, 
 		switch msg.Type {
 		case models.EventPing:
 			// Route through channel to avoid concurrent writes
-			select {
-			case sendChan <- models.WSMessage{Type: models.EventPong}:
-			default:
-			}
+			match.SafeSend(sendChan, models.WSMessage{Type: models.EventPong})
 
 		case models.EventSubmitAnswer:
-			h.handleSubmitAnswer(sendChan, matchID, userID, msg.Payload)
+			h.handleSubmitAnswer(match, sendChan, matchID, userID, msg.Payload)
 
 		default:
-			select {
-			case sendChan <- models.WSMessage{
+			match.SafeSend(sendChan, models.WSMessage{
 				Type:    models.EventError,
 				Payload: models.ErrorPayload{Message: "Unknown event type"},
-			}:
-			default:
-			}
+			})
 		}
 	}
 
@@ -255,7 +264,7 @@ func (h *RankedHandler) handleMatchSession(conn *websocket.Conn, matchID int64, 
 
 // handleSubmitAnswer processes a SUBMIT_ANSWER event from a player.
 // All responses are routed through sendChan to avoid concurrent WebSocket writes.
-func (h *RankedHandler) handleSubmitAnswer(sendChan chan models.WSMessage, matchID int64, userID int64, rawPayload interface{}) {
+func (h *RankedHandler) handleSubmitAnswer(match *services.ActiveRankedMatch, sendChan chan models.WSMessage, matchID int64, userID int64, rawPayload interface{}) {
 	// Parse payload
 	payloadBytes, err := json.Marshal(rawPayload)
 	if err != nil {
@@ -263,13 +272,10 @@ func (h *RankedHandler) handleSubmitAnswer(sendChan chan models.WSMessage, match
 	}
 	var payload models.SubmitAnswerPayload
 	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		select {
-		case sendChan <- models.WSMessage{
+		match.SafeSend(sendChan, models.WSMessage{
 			Type:    models.EventError,
 			Payload: models.ErrorPayload{Message: "Invalid answer payload"},
-		}:
-		default:
-		}
+		})
 		return
 	}
 
@@ -278,25 +284,18 @@ func (h *RankedHandler) handleSubmitAnswer(sendChan chan models.WSMessage, match
 		matchID, userID, payload.Index, payload.SelectedIndex,
 	)
 	if err != nil || result == nil {
-		select {
-		case sendChan <- models.WSMessage{
+		match.SafeSend(sendChan, models.WSMessage{
 			Type:    models.EventError,
 			Payload: models.ErrorPayload{Message: "Failed to process answer"},
-		}:
-		default:
-		}
+		})
 		return
 	}
 
 	// Send answer result via channel (avoids concurrent writes with outbound pump)
-	select {
-	case sendChan <- models.WSMessage{
+	match.SafeSendTimeout(sendChan, models.WSMessage{
 		Type:    "ANSWER_RESULT",
 		Payload: result,
-	}:
-	case <-time.After(5 * time.Second):
-		log.Printf("ranked: timed out sending ANSWER_RESULT to user %d (channel full)", userID)
-	}
+	}, 5*time.Second)
 
 	// Notify opponent of progress update (via their send channel)
 	h.notifyOpponentProgress(matchID, userID)
@@ -371,11 +370,7 @@ func (h *RankedHandler) startQuestionTimeout(conn *websocket.Conn, matchID int64
 		} else {
 			sendChan = match.P2Send
 		}
-		select {
-		case sendChan <- models.WSMessage{Type: "ANSWER_RESULT", Payload: result}:
-		case <-time.After(5 * time.Second):
-			log.Printf("ranked: timed out sending timeout ANSWER_RESULT to user %d in match %d", userID, matchID)
-		}
+		match.SafeSendTimeout(sendChan, models.WSMessage{Type: "ANSWER_RESULT", Payload: result}, 5*time.Second)
 
 		h.notifyOpponentProgress(matchID, userID)
 
@@ -437,17 +432,9 @@ func (h *RankedHandler) tryAdvanceBothPlayers(matchID int64) {
 		},
 	}
 
-	// Send to both players via their channels (with timeout to prevent silent drops)
-	select {
-	case match.P1Send <- msg:
-	case <-time.After(5 * time.Second):
-		log.Printf("ranked: timed out sending QUESTION_START to P1 in match %d", matchID)
-	}
-	select {
-	case match.P2Send <- msg:
-	case <-time.After(5 * time.Second):
-		log.Printf("ranked: timed out sending QUESTION_START to P2 in match %d", matchID)
-	}
+	// Send to both players via their channels
+	match.SafeSendTimeout(match.P1Send, msg, 5*time.Second)
+	match.SafeSendTimeout(match.P2Send, msg, 5*time.Second)
 
 	// Start timeout timers for both players on this question
 	h.startSyncedQuestionTimeout(matchID, match.Player1.UserID, idx, q.TimeLimit)
@@ -483,11 +470,7 @@ func (h *RankedHandler) startSyncedQuestionTimeout(matchID int64, userID int64, 
 		} else {
 			sendChan = match.P2Send
 		}
-		select {
-		case sendChan <- models.WSMessage{Type: "ANSWER_RESULT", Payload: result}:
-		case <-time.After(5 * time.Second):
-			log.Printf("ranked: timed out sending ANSWER_RESULT to user %d in match %d", userID, matchID)
-		}
+		match.SafeSendTimeout(sendChan, models.WSMessage{Type: "ANSWER_RESULT", Payload: result}, 5*time.Second)
 
 		h.notifyOpponentProgress(matchID, userID)
 
@@ -527,11 +510,7 @@ func (h *RankedHandler) notifyOpponentProgress(matchID int64, userID int64) {
 			"totalScore": totalScore,
 		},
 	}
-	select {
-	case opponentChan <- msg:
-	default:
-		// Channel full, skip
-	}
+	match.SafeSend(opponentChan, msg)
 }
 
 // sendMatchEnd sends the MATCH_END event to both players.
@@ -546,18 +525,10 @@ func (h *RankedHandler) sendMatchEnd(matchID int64) {
 	p2Payload := h.matchService.GetMatchEndPayload(matchID, match.Player2.UserID)
 
 	if p1Payload != nil {
-		select {
-		case match.P1Send <- models.WSMessage{Type: models.EventMatchEnd, Payload: p1Payload}:
-		case <-time.After(5 * time.Second):
-			log.Printf("ranked: timed out sending MATCH_END to P1 in match %d", matchID)
-		}
+		match.SafeSendTimeout(match.P1Send, models.WSMessage{Type: models.EventMatchEnd, Payload: p1Payload}, 5*time.Second)
 	}
 	if p2Payload != nil {
-		select {
-		case match.P2Send <- models.WSMessage{Type: models.EventMatchEnd, Payload: p2Payload}:
-		case <-time.After(5 * time.Second):
-			log.Printf("ranked: timed out sending MATCH_END to P2 in match %d", matchID)
-		}
+		match.SafeSendTimeout(match.P2Send, models.WSMessage{Type: models.EventMatchEnd, Payload: p2Payload}, 5*time.Second)
 	}
 
 	// Clean up after a delay to let messages flush

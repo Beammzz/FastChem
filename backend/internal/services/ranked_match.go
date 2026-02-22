@@ -46,6 +46,50 @@ type ActiveRankedMatch struct {
 	// Channels to notify WebSocket handlers
 	P1Send chan models.WSMessage
 	P2Send chan models.WSMessage
+	Done   chan struct{} // closed when match is removed; all senders must check this
+}
+
+// Mu returns the match mutex for external locking (used by room handler).
+func (m *ActiveRankedMatch) Mu() *sync.Mutex {
+	return &m.mu
+}
+
+// SafeSend sends a message to a player channel without panicking if the
+// channel is already closed (match removed). Returns true if the message was
+// sent successfully.
+func (m *ActiveRankedMatch) SafeSend(ch chan models.WSMessage, msg models.WSMessage) bool {
+	select {
+	case <-m.Done:
+		return false
+	default:
+	}
+	// Belt-and-suspenders: recover from a send-on-closed-channel panic
+	// in case Done and channel close race.
+	defer func() { recover() }()
+	select {
+	case ch <- msg:
+		return true
+	default:
+		return false
+	}
+}
+
+// SafeSendTimeout sends a message with a timeout. Returns true if sent.
+func (m *ActiveRankedMatch) SafeSendTimeout(ch chan models.WSMessage, msg models.WSMessage, timeout time.Duration) bool {
+	select {
+	case <-m.Done:
+		return false
+	default:
+	}
+	defer func() { recover() }()
+	select {
+	case ch <- msg:
+		return true
+	case <-m.Done:
+		return false
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // RankedMatchService manages active ranked matches.
@@ -108,6 +152,7 @@ func (rms *RankedMatchService) CreateMatch(
 		CreatedAt:       time.Now(),
 		P1Send:          make(chan models.WSMessage, 32),
 		P2Send:          make(chan models.WSMessage, 32),
+		Done:            make(chan struct{}),
 	}
 
 	rms.mu.Lock()
@@ -142,6 +187,12 @@ func (rms *RankedMatchService) RemoveMatch(matchID int64) {
 	rms.mu.Lock()
 	defer rms.mu.Unlock()
 	if m, ok := rms.matches[matchID]; ok {
+		// Signal all goroutines to stop first, then close channels.
+		select {
+		case <-m.Done:
+		default:
+			close(m.Done)
+		}
 		close(m.P1Send)
 		close(m.P2Send)
 		delete(rms.matches, matchID)
@@ -515,7 +566,13 @@ func (rms *RankedMatchService) determineWinner(match *ActiveRankedMatch) int64 {
 }
 
 // persistMatchResult saves the match result and updates ratings in the database.
+// Skips DB persistence for custom room matches (negative matchID).
 func (rms *RankedMatchService) persistMatchResult(match *ActiveRankedMatch, winnerID int64) {
+	// Custom room matches have negative IDs — skip DB operations
+	if match.MatchID < 0 {
+		return
+	}
+
 	tx, err := database.DB.Begin()
 	if err != nil {
 		log.Printf("ranked: failed to start tx: %v", err)
@@ -706,6 +763,11 @@ func (rms *RankedMatchService) CleanupStaleMatches(maxAge time.Duration) {
 				"UPDATE ranked_matches SET status = 'abandoned', finished_at = ? WHERE id = ?",
 				now, id,
 			)
+			select {
+			case <-m.Done:
+			default:
+				close(m.Done)
+			}
 			close(m.P1Send)
 			close(m.P2Send)
 			delete(rms.matches, id)
