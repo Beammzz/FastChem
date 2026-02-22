@@ -1,0 +1,67 @@
+package models
+
+// Question represents a generated chemistry question
+type Question struct {
+	ID           string   `json:"id"`
+	Question     string   `json:"question"`
+	Choices      []string `json:"choices"`
+	CorrectIndex int      `json:"correctIndex"`
+	TimeLimit    int      `json:"timeLimit"`
+	Category     string   `json:"category"`
+	Difficulty   string   `json:"difficulty"`
+}
+
+// ValidateRequest is the payload for answer validation (legacy).
+type ValidateRequest struct {
+	QuestionID    string `json:"questionId" binding:"required"`
+	SelectedIndex int    `json:"selectedIndex"`
+	CorrectIndex  int    `json:"correctIndex"`
+}
+
+// ValidateResponse is the response after validation (legacy).
+type ValidateResponse struct {
+	Correct      bool   `json:"correct"`
+	CorrectIndex int    `json:"correctIndex"`
+	Message      string `json:"message"`
+}
+
+// AnswerRequest is the payload for the new per-question answer submission.
+// The client only sends questionId and selectedIndex — the server looks up
+// the correct answer and calculates time_spent from its own records.
+type AnswerRequest struct {
+	QuestionID    string `json:"questionId" binding:"required"`
+	SelectedIndex int    `json:"selectedIndex"`
+}
+
+// AnswerResponse is returned after server-side answer validation and scoring.
+type AnswerResponse struct {
+	Correct      bool    `json:"correct"`
+	CorrectIndex int     `json:"correctIndex"`
+	ScoreEarned  int     `json:"scoreEarned"`
+	SpeedBonus   int     `json:"speedBonus"`
+	TimeSpent    float64 `json:"timeSpent"`
+	Difficulty   string  `json:"difficulty"`
+	TimedOut     bool    `json:"timedOut"`
+}
+
+// Element holds basic element data for question generation
+type Element struct {
+	Symbol       string
+	Name         string
+	NameTH       string
+	AtomicNumber int
+	MolarMass    float64 // g/mol – used for medium & hard questions
+}
+
+// Compound holds compound data for oxidation number questions
+type Compound struct {
+	Formula  string
+	Elements []CompoundElement
+}
+
+// CompoundElement holds element info within a compound
+type CompoundElement struct {
+	Symbol          string
+	OxidationNumber int
+	Count           int
+}

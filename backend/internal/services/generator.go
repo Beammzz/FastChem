@@ -1,0 +1,299 @@
+package services
+
+import (
+	"fmt"
+	"math/rand"
+	"strconv"
+
+	"github.com/google/uuid"
+	"github.com/takumi/fastchem/internal/models"
+)
+
+// QuestionGen is the interface that all difficulty generators implement
+type QuestionGen interface {
+	Generate() models.Question
+}
+
+// QuestionGenerator is the main entry point – delegates to the correct difficulty generator
+type QuestionGenerator struct {
+	easy   QuestionGen
+	medium QuestionGen
+	hard   QuestionGen
+}
+
+// NewQuestionGenerator creates a new generator instance
+func NewQuestionGenerator() *QuestionGenerator {
+	return &QuestionGenerator{
+		easy:   &EasyGenerator{},
+		medium: &MediumGenerator{},
+		hard:   &HardGenerator{},
+	}
+}
+
+// GenerateQuestion produces a question for the given difficulty
+func (g *QuestionGenerator) GenerateQuestion(difficulty string) models.Question {
+	switch difficulty {
+	case "medium":
+		return g.medium.Generate()
+	case "hard":
+		return g.hard.Generate()
+	default:
+		return g.easy.Generate()
+	}
+}
+
+// GenerateQuestionByCategories picks a random category from the list and generates a matching question
+func (g *QuestionGenerator) GenerateQuestionByCategories(categories []string) models.Question {
+	if len(categories) == 0 {
+		return g.easy.Generate()
+	}
+	cat := categories[rand.Intn(len(categories))]
+	switch cat {
+	case "atomic_structure":
+		return (&EasyGenerator{}).generateAtomicStructureQuestion()
+	case "oxidation_number":
+		return (&EasyGenerator{}).generateOxidationQuestion()
+	case "mole_concept":
+		return (&MediumGenerator{}).Generate()
+	case "dilution":
+		return (&HardGenerator{}).dilution()
+	case "preparing_solution":
+		return (&HardGenerator{}).preparingFromSolid()
+	case "freezing_point":
+		return (&HardGenerator{}).freezingPointDepression()
+	default:
+		return g.easy.Generate()
+	}
+}
+
+// ValidateAnswer checks if the selected answer is correct (legacy)
+func (g *QuestionGenerator) ValidateAnswer(req models.ValidateRequest) models.ValidateResponse {
+	correct := req.SelectedIndex == req.CorrectIndex
+	msg := "ผิด!"
+	if correct {
+		msg = "ถูกต้อง!"
+	}
+	return models.ValidateResponse{
+		Correct:      correct,
+		CorrectIndex: req.CorrectIndex,
+		Message:      msg,
+	}
+}
+
+// ─── Easy Generator ──────────────────────────────────────────────
+
+// EasyGenerator produces atomic-structure and oxidation-number questions
+type EasyGenerator struct{}
+
+// Generate creates one easy question
+func (g *EasyGenerator) Generate() models.Question {
+	if rand.Intn(2) == 0 {
+		return g.generateAtomicStructureQuestion()
+	}
+	return g.generateOxidationQuestion()
+}
+
+func (g *EasyGenerator) generateAtomicStructureQuestion() models.Question {
+	elem := elements[rand.Intn(len(elements))]
+	atomicNumber := elem.AtomicNumber
+	massNumber := atomicNumber + rand.Intn(11)
+
+	questionType := rand.Intn(4)
+
+	var questionText string
+	var correctAnswer int
+
+	switch questionType {
+	case 0:
+		// Ask for atomic number — no hint, must look up periodic table
+		questionText = fmt.Sprintf(
+			"ธาตุ %s (%s) มีเลขอะตอมเท่าใด?",
+			elem.NameTH, elem.Symbol,
+		)
+		correctAnswer = atomicNumber
+	case 1:
+		// Ask for proton count — no hint
+		questionText = fmt.Sprintf(
+			"ธาตุ %s (%s) มีจำนวนโปรตอนเท่าใด?",
+			elem.NameTH, elem.Symbol,
+		)
+		correctAnswer = atomicNumber
+	case 2:
+		// Ask for electron count in neutral atom — no hint
+		questionText = fmt.Sprintf(
+			"อะตอมที่เป็นกลางของ %s (%s) มีจำนวนอิเล็กตรอนเท่าใด?",
+			elem.NameTH, elem.Symbol,
+		)
+		correctAnswer = atomicNumber
+	case 3:
+		// Ask for neutron count — give mass number only, must know atomic number
+		neutrons := massNumber - atomicNumber
+		questionText = fmt.Sprintf(
+			"ไอโซโทปของ %s (%s) ที่มีเลขมวล %d มีจำนวนนิวตรอนเท่าใด?",
+			elem.NameTH, elem.Symbol, massNumber,
+		)
+		correctAnswer = neutrons
+	}
+
+	choices, correctIndex := generateDistractors(correctAnswer, 0, 40)
+
+	return models.Question{
+		ID:           uuid.New().String(),
+		Question:     questionText,
+		Choices:      choices,
+		CorrectIndex: correctIndex,
+		TimeLimit:    GetDifficultyConfig("easy").TimeLimit,
+		Category:     "atomic_structure",
+		Difficulty:   "easy",
+	}
+}
+
+func (g *EasyGenerator) generateOxidationQuestion() models.Question {
+	compound := compounds[rand.Intn(len(compounds))]
+	target := compound.Elements[rand.Intn(len(compound.Elements))]
+
+	questionText := fmt.Sprintf(
+		"เลขออกซิเดชันของ %s ใน %s คือเท่าใด?",
+		target.Symbol, compound.Formula,
+	)
+
+	choices, correctIndex := generateOxidationDistractors(target.OxidationNumber)
+
+	return models.Question{
+		ID:           uuid.New().String(),
+		Question:     questionText,
+		Choices:      choices,
+		CorrectIndex: correctIndex,
+		TimeLimit:    GetDifficultyConfig("easy").TimeLimit,
+		Category:     "oxidation_number",
+		Difficulty:   "easy",
+	}
+}
+
+// ─── Shared helpers ──────────────────────────────────────────────
+
+// generateDistractors creates 4 unique plausible choices for integer answers
+func generateDistractors(correct, minVal, maxVal int) ([]string, int) {
+	choices := make(map[int]bool)
+	choices[correct] = true
+
+	for len(choices) < 4 {
+		offset := rand.Intn(9) - 4
+		if offset == 0 {
+			offset = rand.Intn(2)*2 - 1
+		}
+		distractor := correct + offset
+		if distractor < minVal {
+			distractor = minVal + rand.Intn(5)
+		}
+		if distractor > maxVal {
+			distractor = maxVal - rand.Intn(5)
+		}
+		if distractor != correct {
+			choices[distractor] = true
+		}
+	}
+
+	choiceSlice := make([]string, 0, 4)
+	for c := range choices {
+		choiceSlice = append(choiceSlice, strconv.Itoa(c))
+	}
+
+	rand.Shuffle(len(choiceSlice), func(i, j int) {
+		choiceSlice[i], choiceSlice[j] = choiceSlice[j], choiceSlice[i]
+	})
+
+	correctStr := strconv.Itoa(correct)
+	correctIndex := 0
+	for i, c := range choiceSlice {
+		if c == correctStr {
+			correctIndex = i
+			break
+		}
+	}
+
+	return choiceSlice, correctIndex
+}
+
+// generateOxidationDistractors creates 4 unique plausible oxidation number choices
+func generateOxidationDistractors(correct int) ([]string, int) {
+	choices := make(map[int]bool)
+	choices[correct] = true
+
+	commonOx := []int{-3, -2, -1, 0, +1, +2, +3, +4, +5, +6, +7}
+
+	for len(choices) < 4 {
+		candidate := commonOx[rand.Intn(len(commonOx))]
+		if candidate != correct {
+			choices[candidate] = true
+		}
+	}
+
+	choiceSlice := make([]string, 0, 4)
+	for c := range choices {
+		if c > 0 {
+			choiceSlice = append(choiceSlice, fmt.Sprintf("+%d", c))
+		} else {
+			choiceSlice = append(choiceSlice, strconv.Itoa(c))
+		}
+	}
+
+	rand.Shuffle(len(choiceSlice), func(i, j int) {
+		choiceSlice[i], choiceSlice[j] = choiceSlice[j], choiceSlice[i]
+	})
+
+	var correctStr string
+	if correct > 0 {
+		correctStr = fmt.Sprintf("+%d", correct)
+	} else {
+		correctStr = strconv.Itoa(correct)
+	}
+
+	correctIndex := 0
+	for i, c := range choiceSlice {
+		if c == correctStr {
+			correctIndex = i
+			break
+		}
+	}
+
+	return choiceSlice, correctIndex
+}
+
+// generateFloatDistractors creates 4 unique plausible float choices
+func generateFloatDistractors(correct float64, format string) ([]string, int) {
+	choices := make(map[string]bool)
+	correctStr := fmt.Sprintf(format, correct)
+	choices[correctStr] = true
+
+	for len(choices) < 4 {
+		factor := 0.5 + rand.Float64()*1.0
+		if factor > 0.9 && factor < 1.1 {
+			factor = 1.3
+		}
+		distractor := correct * factor
+		dStr := fmt.Sprintf(format, distractor)
+		if dStr != correctStr {
+			choices[dStr] = true
+		}
+	}
+
+	choiceSlice := make([]string, 0, 4)
+	for c := range choices {
+		choiceSlice = append(choiceSlice, c)
+	}
+
+	rand.Shuffle(len(choiceSlice), func(i, j int) {
+		choiceSlice[i], choiceSlice[j] = choiceSlice[j], choiceSlice[i]
+	})
+
+	correctIndex := 0
+	for i, c := range choiceSlice {
+		if c == correctStr {
+			correctIndex = i
+			break
+		}
+	}
+
+	return choiceSlice, correctIndex
+}
