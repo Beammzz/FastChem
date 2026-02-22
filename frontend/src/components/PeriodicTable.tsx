@@ -35,7 +35,7 @@ export default function PeriodicTable({ enabled = true }: PeriodicTableProps) {
       {/* Toggle button */}
       <button
         onClick={() => setOpen(!open)}
-        className={`fixed bottom-20 right-3 sm:bottom-4 sm:right-4 z-50 w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-base sm:text-lg font-bold shadow-lg transition-all
+        className={`fixed bottom-24 right-3 sm:bottom-4 sm:right-4 z-50 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-base sm:text-lg font-bold shadow-lg transition-all
           ${
             open
               ? "bg-violet-600 text-white shadow-violet-500/30"

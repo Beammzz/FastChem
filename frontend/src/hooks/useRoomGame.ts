@@ -328,10 +328,18 @@ export function useRoomGame(): UseRoomGameReturn {
   const submitAnswer = useCallback(
     (selected: number) => {
       if (answeringRef.current) return;
+
+      // Check WS readiness BEFORE mutating UI state
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        setErrorMessage("การเชื่อมต่อขาดหาย ไม่สามารถส่งคำตอบได้");
+        setPhase("error");
+        return;
+      }
+
       answeringRef.current = true;
       setSelectedIndex(selected);
 
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
         wsRef.current.send(
           JSON.stringify({
             type: "SUBMIT_ANSWER",
@@ -341,6 +349,12 @@ export function useRoomGame(): UseRoomGameReturn {
             },
           })
         );
+      } catch {
+        // Revert optimistic UI update on send failure
+        answeringRef.current = false;
+        setSelectedIndex(null);
+        setErrorMessage("ส่งคำตอบไม่สำเร็จ กรุณาลองใหม่");
+        setPhase("error");
       }
     },
     [questionIndex]

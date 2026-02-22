@@ -2,7 +2,7 @@ package services
 
 import (
 	"database/sql"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -82,12 +82,14 @@ func (m *ActiveRankedMatch) SafeSendTimeout(ch chan models.WSMessage, msg models
 	default:
 	}
 	defer func() { recover() }()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case ch <- msg:
 		return true
 	case <-m.Done:
 		return false
-	case <-time.After(timeout):
+	case <-timer.C:
 		return false
 	}
 }
@@ -96,6 +98,7 @@ func (m *ActiveRankedMatch) SafeSendTimeout(ch chan models.WSMessage, msg models
 type RankedMatchService struct {
 	mu      sync.RWMutex
 	matches map[int64]*ActiveRankedMatch // matchID → match
+	byUser  map[int64]int64              // userID → matchID (O(1) lookup)
 	rating  *RatingService
 }
 
@@ -103,6 +106,7 @@ type RankedMatchService struct {
 func NewRankedMatchService() *RankedMatchService {
 	return &RankedMatchService{
 		matches: make(map[int64]*ActiveRankedMatch),
+		byUser:  make(map[int64]int64),
 		rating:  NewRatingService(),
 	}
 }
@@ -157,6 +161,8 @@ func (rms *RankedMatchService) CreateMatch(
 
 	rms.mu.Lock()
 	rms.matches[matchID] = match
+	rms.byUser[p1ID] = matchID
+	rms.byUser[p2ID] = matchID
 	rms.mu.Unlock()
 
 	return match, nil
@@ -170,16 +176,16 @@ func (rms *RankedMatchService) GetMatch(matchID int64) (*ActiveRankedMatch, bool
 	return m, ok
 }
 
-// GetMatchByUserID finds the active ranked match for a given user.
+// GetMatchByUserID finds the active ranked match for a given user. O(1).
 func (rms *RankedMatchService) GetMatchByUserID(userID int64) (*ActiveRankedMatch, bool) {
 	rms.mu.RLock()
 	defer rms.mu.RUnlock()
-	for _, m := range rms.matches {
-		if m.Player1.UserID == userID || m.Player2.UserID == userID {
-			return m, true
-		}
+	matchID, ok := rms.byUser[userID]
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	m, ok := rms.matches[matchID]
+	return m, ok
 }
 
 // RemoveMatch removes a match from the in-memory store.
@@ -195,6 +201,8 @@ func (rms *RankedMatchService) RemoveMatch(matchID int64) {
 		}
 		close(m.P1Send)
 		close(m.P2Send)
+		delete(rms.byUser, m.Player1.UserID)
+		delete(rms.byUser, m.Player2.UserID)
 		delete(rms.matches, matchID)
 	}
 }
@@ -575,7 +583,7 @@ func (rms *RankedMatchService) persistMatchResult(match *ActiveRankedMatch, winn
 
 	tx, err := database.DB.Begin()
 	if err != nil {
-		log.Printf("ranked: failed to start tx: %v", err)
+		slog.Error("ranked: failed to start tx", "error", err)
 		return
 	}
 	defer tx.Rollback()
@@ -589,7 +597,7 @@ func (rms *RankedMatchService) persistMatchResult(match *ActiveRankedMatch, winn
 		winnerID, match.Status, match.FinishedAt, match.MatchID,
 	)
 	if err != nil {
-		log.Printf("ranked: failed to update match: %v", err)
+		slog.Error("ranked: failed to update match", "error", err, "matchID", match.MatchID)
 		return
 	}
 
@@ -604,7 +612,7 @@ func (rms *RankedMatchService) persistMatchResult(match *ActiveRankedMatch, winn
 				r.Topic, r.Correct, r.TimeSpent, r.ScoreEarned,
 			)
 			if err != nil {
-				log.Printf("ranked: failed to insert question result: %v", err)
+				slog.Error("ranked: failed to insert question result", "error", err)
 				return
 			}
 		}
@@ -629,7 +637,7 @@ func (rms *RankedMatchService) persistMatchResult(match *ActiveRankedMatch, winn
 		)
 	}
 	if err != nil {
-		log.Printf("ranked: failed to update player 1 rating: %v", err)
+		slog.Error("ranked: failed to update player 1 rating", "error", err)
 		return
 	}
 
@@ -647,12 +655,12 @@ func (rms *RankedMatchService) persistMatchResult(match *ActiveRankedMatch, winn
 		)
 	}
 	if err != nil {
-		log.Printf("ranked: failed to update player 2 rating: %v", err)
+		slog.Error("ranked: failed to update player 2 rating", "error", err)
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("ranked: failed to commit: %v", err)
+		slog.Error("ranked: failed to commit", "error", err)
 		return
 	}
 
@@ -770,6 +778,8 @@ func (rms *RankedMatchService) CleanupStaleMatches(maxAge time.Duration) {
 			}
 			close(m.P1Send)
 			close(m.P2Send)
+			delete(rms.byUser, m.Player1.UserID)
+			delete(rms.byUser, m.Player2.UserID)
 			delete(rms.matches, id)
 		}
 	}

@@ -41,10 +41,10 @@ export default function LeaderboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a1a] text-white">
+    <div className="min-h-screen-safe bg-[#0a0a1a] text-white">
       <Navbar />
 
-      <div className="max-w-4xl mx-auto px-6 pt-12 pb-16">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-8 sm:pt-12 pb-16 pb-safe">
         {/* Header */}
         <div className="text-center mb-10">
           <h1 className="text-4xl font-extrabold mb-2">
@@ -96,13 +96,14 @@ export default function LeaderboardPage() {
                 <p className="text-sm mt-1">เป็นคนแรกที่เล่นและทำสถิติ!</p>
               </div>
             ) : (
-              <table className="w-full">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[400px]">
                 <thead>
                   <tr className="border-b border-white/5 text-xs text-gray-500 uppercase tracking-wider">
-                    <th className="text-left px-6 py-4 w-16">อันดับ</th>
-                    <th className="text-left px-6 py-4">ผู้เล่น</th>
-                    <th className="text-right px-6 py-4">คะแนนรวม</th>
-                    <th className="text-right px-6 py-4 hidden sm:table-cell">จำนวนเกม</th>
+                    <th className="text-left px-4 sm:px-6 py-4 w-12 sm:w-16">อันดับ</th>
+                    <th className="text-left px-4 sm:px-6 py-4">ผู้เล่น</th>
+                    <th className="text-right px-4 sm:px-6 py-4">คะแนนรวม</th>
+                    <th className="text-right px-4 sm:px-6 py-4 hidden sm:table-cell">จำนวนเกม</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -115,13 +116,13 @@ export default function LeaderboardPage() {
                           : "hover:bg-white/[0.02]"
                       }`}
                     >
-                      <td className="px-6 py-4 font-bold text-lg">
+                      <td className="px-4 sm:px-6 py-4 font-bold text-lg">
                         {getRankDisplay(entry.rank)}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 sm:px-6 py-4">
                         <Link
                           href={`/profile/${entry.username}`}
-                          className={`font-semibold hover:underline ${
+                          className={`font-semibold hover:underline truncate block max-w-[120px] sm:max-w-none ${
                             user && entry.userId === user.id
                               ? "text-violet-400"
                               : "text-white"
@@ -135,13 +136,13 @@ export default function LeaderboardPage() {
                           )}
                         </Link>
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <span className="text-lg font-bold text-violet-400 tabular-nums">
+                      <td className="px-4 sm:px-6 py-4 text-right">
+                        <span className="text-base sm:text-lg font-bold text-violet-400 tabular-nums">
                           {entry.totalPoints.toLocaleString()}
                         </span>
-                        <span className="text-xs text-gray-500 ml-1">คะแนน</span>
+                        <span className="text-xs text-gray-500 ml-1 hidden sm:inline">คะแนน</span>
                       </td>
-                      <td className="px-6 py-4 text-right hidden sm:table-cell">
+                      <td className="px-4 sm:px-6 py-4 text-right hidden sm:table-cell">
                         <span className="text-sm text-gray-400 tabular-nums">
                           {entry.totalGames} ครั้ง
                         </span>
@@ -150,6 +151,7 @@ export default function LeaderboardPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )
           ) : (
             /* Ranked leaderboard */
@@ -160,14 +162,15 @@ export default function LeaderboardPage() {
                 <p className="text-sm mt-1">เป็นคนแรกที่เล่น Ranked และทำสถิติ!</p>
               </div>
             ) : (
-              <table className="w-full">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[400px]">
                 <thead>
                   <tr className="border-b border-white/5 text-xs text-gray-500 uppercase tracking-wider">
-                    <th className="text-left px-6 py-4 w-16">อันดับ</th>
-                    <th className="text-left px-6 py-4">ผู้เล่น</th>
-                    <th className="text-right px-6 py-4">Rating</th>
-                    <th className="text-right px-6 py-4 hidden sm:table-cell">สถิติ</th>
-                    <th className="text-right px-6 py-4 hidden md:table-cell">สูงสุด</th>
+                    <th className="text-left px-4 sm:px-6 py-4 w-12 sm:w-16">อันดับ</th>
+                    <th className="text-left px-4 sm:px-6 py-4">ผู้เล่น</th>
+                    <th className="text-right px-4 sm:px-6 py-4">Rating</th>
+                    <th className="text-right px-4 sm:px-6 py-4 hidden sm:table-cell">สถิติ</th>
+                    <th className="text-right px-4 sm:px-6 py-4 hidden md:table-cell">สูงสุด</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -231,6 +234,7 @@ export default function LeaderboardPage() {
                   })}
                 </tbody>
               </table>
+              </div>
             )
           )}
         </div>

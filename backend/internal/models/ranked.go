@@ -140,3 +140,27 @@ type MatchEndPlayerSummary struct {
 type ErrorPayload struct {
 	Message string `json:"message"`
 }
+
+// QueueJoinedPayload is sent when the player joins the matchmaking queue.
+type QueueJoinedPayload struct {
+	Message string `json:"message"`
+	Rating  int    `json:"rating"`
+}
+
+// OpponentProgressPayload is sent to notify a player of their opponent's progress.
+type OpponentProgressPayload struct {
+	Answered   int `json:"answered"`
+	TotalScore int `json:"totalScore"`
+}
+
+// RoomCreatedPayload is sent to the host when a room is created.
+type RoomCreatedPayload struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// RoomJoinedPayload is sent to the guest when they join a room.
+type RoomJoinedPayload struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}

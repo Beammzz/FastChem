@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
 
 	"github.com/takumi/fastchem/internal/models"
 )
@@ -426,11 +427,11 @@ func seededSciDistractors(rng *rand.Rand, correct float64) ([]string, int) {
 // ─── Utility functions ──────────────────────────────────────────
 
 func itoa(n int) string {
-	return fmt.Sprintf("%d", n)
+	return strconv.Itoa(n)
 }
 
 func ftoa(f float64, decimals int) string {
-	format := "%." + itoa(decimals) + "f"
+	format := "%." + strconv.Itoa(decimals) + "f"
 	return fmt.Sprintf(format, f)
 }
 

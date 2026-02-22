@@ -108,7 +108,7 @@ export default function QuestionCard({
             disabled={selectedIndex !== null}
             className={`
               border rounded-xl px-4 py-3 sm:px-6 sm:py-5 text-sm sm:text-lg font-bold
-              transition-all duration-150
+              transition-all duration-150 min-h-[44px]
               ${selectedIndex === null ? "hover:scale-[1.02] active:scale-[0.98]" : ""}
               ${getChoiceStyle(index)}
             `}

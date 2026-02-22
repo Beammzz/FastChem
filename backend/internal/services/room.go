@@ -3,7 +3,7 @@ package services
 import (
 	"crypto/rand"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -67,7 +67,7 @@ func (rs *RoomService) CreateRoom(hostID int64, hostName string) string {
 		Status:    "waiting",
 	}
 	rs.rooms[code] = room
-	log.Printf("room: created room %s by %s (%d)", code, hostName, hostID)
+	slog.Info("room: created room", "code", code, "host", hostName, "hostID", hostID)
 	return code
 }
 
@@ -154,6 +154,8 @@ func (rs *RoomService) StartMatch(code string) (*ActiveRankedMatch, error) {
 
 	rs.matchService.mu.Lock()
 	rs.matchService.matches[matchID] = match
+	rs.matchService.byUser[room.HostID] = matchID
+	rs.matchService.byUser[room.GuestID] = matchID
 	rs.matchService.mu.Unlock()
 
 	room.MatchID = matchID
@@ -186,7 +188,7 @@ func (rs *RoomService) CleanupStaleRooms(maxAge time.Duration) {
 	cutoff := time.Now().Add(-maxAge)
 	for code, r := range rs.rooms {
 		if r.CreatedAt.Before(cutoff) && r.Status == "waiting" {
-			log.Printf("room: cleaning up stale room %s", code)
+			slog.Info("room: cleaning up stale room", "code", code)
 			delete(rs.rooms, code)
 		}
 	}

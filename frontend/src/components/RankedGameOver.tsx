@@ -153,16 +153,16 @@ export default function RankedGameOver({
       </div>
 
       {/* Actions */}
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <button
           onClick={onPlayAgain}
-          className="flex-1 bg-gradient-to-r from-blue-500 to-violet-500 text-white font-bold py-3 px-6 rounded-xl hover:opacity-90 transition-opacity cursor-pointer"
+          className="flex-1 bg-gradient-to-r from-blue-500 to-violet-500 text-white font-bold py-3 px-6 rounded-xl hover:opacity-90 transition-opacity cursor-pointer min-h-[44px]"
         >
           เล่นอีกครั้ง
         </button>
         <button
           onClick={onHome}
-          className="flex-1 bg-white/5 border border-white/10 text-gray-300 font-bold py-3 px-6 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+          className="flex-1 bg-white/5 border border-white/10 text-gray-300 font-bold py-3 px-6 rounded-xl hover:bg-white/10 transition-colors cursor-pointer min-h-[44px]"
         >
           กลับหน้าหลัก
         </button>

@@ -58,10 +58,10 @@ function GameContent() {
   // Idle state — start screen
   if (gameState === "idle") {
     return (
-      <div className="min-h-screen bg-[#0a0a1a] text-white flex flex-col">
+      <div className="min-h-screen-safe bg-[#0a0a1a] text-white flex flex-col">
         {/* Navbar */}
         <nav className="border-b border-white/5 bg-[#0a0a1a]/80 backdrop-blur-md">
-          <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2 text-lg font-bold">
               <span className="text-xl">⚗️</span>
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-purple-400">
@@ -74,8 +74,8 @@ function GameContent() {
           </div>
         </nav>
 
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="text-center space-y-8">
+        <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
+          <div className="text-center space-y-8 w-full max-w-sm">
             <div>
               <div className="text-6xl mb-4">🧪</div>
               <h1 className="text-3xl font-bold text-white mb-2">พร้อมเล่นหรือยัง?</h1>
@@ -103,7 +103,7 @@ function GameContent() {
 
             <button
               onClick={startGame}
-              className="bg-violet-500 hover:bg-violet-600 text-white font-bold text-lg px-12 py-4 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-violet-500/20"
+              className="w-full sm:w-auto bg-violet-500 hover:bg-violet-600 text-white font-bold text-lg px-12 py-4 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-violet-500/20 min-h-[44px]"
             >
               เริ่มเกม
             </button>
@@ -116,9 +116,9 @@ function GameContent() {
   // Finished state
   if (gameState === "finished") {
     return (
-      <div className="min-h-screen bg-[#0a0a1a] text-white flex flex-col">
+      <div className="min-h-screen-safe bg-[#0a0a1a] text-white flex flex-col">
         <nav className="border-b border-white/5 bg-[#0a0a1a]/80 backdrop-blur-md">
-          <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2 text-lg font-bold">
               <span className="text-xl">⚗️</span>
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-purple-400">
@@ -146,7 +146,7 @@ function GameContent() {
 
   // Playing state
   return (
-    <div className="min-h-screen bg-[#0a0a1a] text-white flex flex-col">
+    <div className="min-h-screen-safe bg-[#0a0a1a] text-white flex flex-col">
       {/* Compact game header */}
       <div className="border-b border-white/5 bg-[#0a0a1a]/80 backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-3 sm:px-6 py-2 sm:py-0 sm:h-14 flex flex-col sm:flex-row items-center justify-between gap-1 sm:gap-0">
@@ -162,7 +162,7 @@ function GameContent() {
       </div>
 
       {/* Question area */}
-      <div className="flex-1 flex items-center justify-center p-3 sm:p-6 pb-16 sm:pb-6">
+      <div className="flex-1 flex items-center justify-center p-3 sm:p-6 pb-20 sm:pb-6">
         <div className="w-full max-w-2xl">
           {loading ? (
             <div className="flex justify-center py-16">

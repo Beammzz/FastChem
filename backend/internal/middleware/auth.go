@@ -3,8 +3,8 @@ package middleware
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -12,9 +12,16 @@ import (
 
 var jwtSecret []byte
 
-func init() {
-	secret := os.Getenv("JWT_SECRET")
+// TokenExpiry is how long JWT tokens remain valid.
+const TokenExpiry = 7 * 24 * time.Hour
+
+// InitJWT sets the JWT signing key. Must be called before any token operations.
+// In production (release mode), the secret must not be empty.
+func InitJWT(secret string, production bool) {
 	if secret == "" {
+		if production {
+			panic("JWT_SECRET environment variable must be set in production")
+		}
 		secret = "fastchem-dev-secret-change-in-production"
 	}
 	jwtSecret = []byte(secret)
@@ -26,10 +33,13 @@ func GetJWTSecret() []byte {
 }
 
 // GenerateToken creates a JWT token for the given user ID and username.
+// Tokens expire after TokenExpiry (7 days).
 func GenerateToken(userID int64, username string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id":  userID,
 		"username": username,
+		"exp":      time.Now().Add(TokenExpiry).Unix(),
+		"iat":      time.Now().Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtSecret)

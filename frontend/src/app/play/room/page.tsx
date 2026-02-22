@@ -26,7 +26,7 @@ export default function RoomPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-[#0a0a1a] text-white">
+      <div className="min-h-screen-safe bg-[#0a0a1a] text-white">
         <Navbar />
         <div className="flex justify-center py-32">
           <div className="w-10 h-10 border-3 border-violet-400 border-t-transparent rounded-full animate-spin" />
@@ -38,10 +38,10 @@ export default function RoomPage() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-[#0a0a1a] text-white">
+    <div className="min-h-screen-safe bg-[#0a0a1a] text-white">
       <Navbar />
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-16">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-16 pb-safe">
         {/* Idle - Show room lobby */}
         {room.phase === "idle" && (
           <div className="animate-fade-in">
@@ -67,7 +67,7 @@ export default function RoomPage() {
                 </p>
                 <button
                   onClick={room.createRoom}
-                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold py-3 px-6 rounded-xl text-lg hover:opacity-90 transition-opacity cursor-pointer"
+                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold py-3 px-6 rounded-xl text-lg hover:opacity-90 transition-opacity cursor-pointer min-h-[48px]"
                 >
                   🏠 สร้างห้อง
                 </button>
@@ -81,16 +81,17 @@ export default function RoomPage() {
                 <p className="text-gray-400 text-sm mb-4">
                   ใส่รหัส 6 หลักจากเพื่อนเพื่อเข้าร่วมเกม
                 </p>
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
                   <input
                     type="text"
+                    inputMode="numeric"
                     maxLength={6}
                     value={joinCode}
                     onChange={(e) =>
                       setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 6))
                     }
                     placeholder="000000"
-                    className="flex-1 bg-[#0a0a1a] border border-white/10 rounded-xl px-4 py-3 text-center text-2xl font-mono tracking-[0.5em] text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50"
+                    className="flex-1 bg-[#0a0a1a] border border-white/10 rounded-xl px-4 py-3 text-center text-xl sm:text-2xl font-mono tracking-[0.3em] sm:tracking-[0.5em] text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 min-h-[44px]"
                   />
                   <button
                     onClick={() => {
@@ -99,7 +100,7 @@ export default function RoomPage() {
                       }
                     }}
                     disabled={joinCode.length !== 6}
-                    className="bg-emerald-500 text-white font-bold py-3 px-6 rounded-xl hover:bg-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    className="bg-emerald-500 text-white font-bold py-3 px-6 rounded-xl hover:bg-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer min-h-[44px]"
                   >
                     เข้าร่วม
                   </button>

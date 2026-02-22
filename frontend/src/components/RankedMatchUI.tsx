@@ -276,12 +276,12 @@ export default function RankedMatchUI({
           <button
             key={index}
             onClick={() => {
-              if (selectedIndex === null) {
+              if (selectedIndex === null && timeLeft > 0) {
                 setPreSelected(index);
               }
             }}
-            disabled={selectedIndex !== null}
-            className={`w-full text-left px-4 py-3 sm:px-6 sm:py-4 rounded-xl border transition-all duration-200 text-sm sm:text-base font-medium ${getChoiceStyle(
+            disabled={selectedIndex !== null || timeLeft === 0}
+            className={`w-full text-left px-4 py-3 sm:px-6 sm:py-4 rounded-xl border transition-all duration-200 text-sm sm:text-base font-medium min-h-[44px] ${getChoiceStyle(
               index
             )}`}
           >
@@ -293,14 +293,14 @@ export default function RankedMatchUI({
         ))}
       </div>
 
-      {/* Submit button */}
-      {selectedIndex === null && preSelected !== null && (
+      {/* Submit button — also hide when time has expired to prevent race with server timeout */}
+      {selectedIndex === null && preSelected !== null && timeLeft > 0 && (
         <div className="flex justify-center mt-4 sm:mt-5">
           <button
             onClick={() => {
               onAnswer(preSelected);
             }}
-            className="bg-gradient-to-r from-blue-500 to-violet-500 text-white font-bold py-3 px-10 rounded-xl text-base sm:text-lg hover:opacity-90 active:scale-[0.97] transition-all shadow-lg shadow-blue-500/20 cursor-pointer"
+            className="bg-gradient-to-r from-blue-500 to-violet-500 text-white font-bold py-3 px-10 rounded-xl text-base sm:text-lg hover:opacity-90 active:scale-[0.97] transition-all shadow-lg shadow-blue-500/20 cursor-pointer min-h-[44px]"
           >
             ส่งคำตอบ
           </button>

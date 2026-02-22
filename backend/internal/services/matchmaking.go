@@ -1,7 +1,8 @@
 package services
 
 import (
-	"log"
+	"log/slog"
+	"sort"
 	"sync"
 	"time"
 )
@@ -17,6 +18,7 @@ type QueueEntry struct {
 }
 
 // MatchmakingQueue manages the ranked matchmaking queue.
+// The queue is kept sorted by rating for efficient O(n) sliding-window pairing.
 type MatchmakingQueue struct {
 	mu           sync.Mutex
 	queue        []*QueueEntry
@@ -34,7 +36,8 @@ func NewMatchmakingQueue(matchService *RankedMatchService) *MatchmakingQueue {
 	return mq
 }
 
-// Enqueue adds a player to the queue. Returns the notification channel.
+// Enqueue adds a player to the queue in sorted-by-rating order.
+// Returns the notification channel.
 func (mq *MatchmakingQueue) Enqueue(userID int64, username string, rating int) chan int64 {
 	mq.mu.Lock()
 	defer mq.mu.Unlock()
@@ -58,7 +61,15 @@ func (mq *MatchmakingQueue) Enqueue(userID int64, username string, rating int) c
 		JoinedAt: time.Now(),
 		Matched:  make(chan int64, 1),
 	}
-	mq.queue = append(mq.queue, entry)
+
+	// Sorted insert by rating (ascending)
+	i := sort.Search(len(mq.queue), func(j int) bool {
+		return mq.queue[j].Rating >= rating
+	})
+	mq.queue = append(mq.queue, nil)
+	copy(mq.queue[i+1:], mq.queue[i:])
+	mq.queue[i] = entry
+
 	return entry.Matched
 }
 
@@ -105,9 +116,10 @@ func (mq *MatchmakingQueue) matchmakingLoop() {
 	}
 }
 
-// tryMatch attempts to match two players from the queue.
-// Simple approach: match closest-rated players if within rating window.
-// Rating window expands with wait time.
+// tryMatch attempts to match two players from the sorted queue.
+// Uses a sliding-window approach over the rating-sorted queue: for each
+// player, only the adjacent neighbour is checked. This gives O(n) per tick
+// instead of the previous O(n²) brute-force.
 func (mq *MatchmakingQueue) tryMatch() {
 	mq.mu.Lock()
 	defer mq.mu.Unlock()
@@ -118,49 +130,42 @@ func (mq *MatchmakingQueue) tryMatch() {
 
 	now := time.Now()
 
-	// Try to find a pair with closest ratings
-	bestI, bestJ := -1, -1
-	bestDiff := int(^uint(0) >> 1) // max int
+	// Sliding window: scan adjacent pairs and pick the best eligible match.
+	bestI := -1
+	bestDiff := int(^uint(0) >> 1)
 
-	for i := 0; i < len(mq.queue); i++ {
-		for j := i + 1; j < len(mq.queue); j++ {
-			p1 := mq.queue[i]
-			p2 := mq.queue[j]
+	for i := 0; i < len(mq.queue)-1; i++ {
+		p1 := mq.queue[i]
+		p2 := mq.queue[i+1]
 
-			ratingDiff := abs(p1.Rating - p2.Rating)
+		ratingDiff := p2.Rating - p1.Rating // always >= 0 (sorted)
 
-			// Rating window: starts at 100, expands by 50 per second waited
-			p1Wait := now.Sub(p1.JoinedAt).Seconds()
-			p2Wait := now.Sub(p2.JoinedAt).Seconds()
-			maxWait := p1Wait
-			if p2Wait > maxWait {
-				maxWait = p2Wait
-			}
+		// Rating window: starts at 100, expands by 50 per second waited
+		p1Wait := now.Sub(p1.JoinedAt).Seconds()
+		p2Wait := now.Sub(p2.JoinedAt).Seconds()
+		maxWait := p1Wait
+		if p2Wait > maxWait {
+			maxWait = p2Wait
+		}
 
-			ratingWindow := 100 + int(maxWait*50)
+		ratingWindow := 100 + int(maxWait*50)
 
-			if ratingDiff <= ratingWindow && ratingDiff < bestDiff {
-				bestI, bestJ = i, j
-				bestDiff = ratingDiff
-			}
+		if ratingDiff <= ratingWindow && ratingDiff < bestDiff {
+			bestI = i
+			bestDiff = ratingDiff
 		}
 	}
 
-	if bestI == -1 || bestJ == -1 {
+	if bestI == -1 {
 		return
 	}
 
 	p1 := mq.queue[bestI]
-	p2 := mq.queue[bestJ]
+	p2 := mq.queue[bestI+1]
 
-	// Remove both from queue (remove higher index first)
-	if bestI > bestJ {
-		mq.queue = append(mq.queue[:bestI], mq.queue[bestI+1:]...)
-		mq.queue = append(mq.queue[:bestJ], mq.queue[bestJ+1:]...)
-	} else {
-		mq.queue = append(mq.queue[:bestJ], mq.queue[bestJ+1:]...)
-		mq.queue = append(mq.queue[:bestI], mq.queue[bestI+1:]...)
-	}
+	// Remove both from queue (higher index first to keep indices valid)
+	mq.queue = append(mq.queue[:bestI+1], mq.queue[bestI+2:]...)
+	mq.queue = append(mq.queue[:bestI], mq.queue[bestI+1:]...)
 
 	// Create match (outside lock to avoid deadlock)
 	go func() {
@@ -171,7 +176,7 @@ func (mq *MatchmakingQueue) tryMatch() {
 			seed,
 		)
 		if err != nil {
-			log.Printf("matchmaking: failed to create match: %v", err)
+			slog.Error("matchmaking: failed to create match", "error", err)
 			return
 		}
 

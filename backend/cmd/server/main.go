@@ -1,15 +1,19 @@
 package main
 
 import (
-	"log"
+	"context"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/takumi/fastchem/internal/config"
 	"github.com/takumi/fastchem/internal/database"
 	"github.com/takumi/fastchem/internal/handlers"
 	"github.com/takumi/fastchem/internal/middleware"
@@ -17,13 +21,13 @@ import (
 )
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	cfg := config.Load()
+
+	// Initialize JWT (must happen before any handler runs)
+	middleware.InitJWT(cfg.JWTSecret, cfg.IsProduction())
 
 	// Initialize database
-	database.Init()
+	database.Init(cfg.DBPath)
 	defer database.Close()
 
 	// Periodically clean up expired questions from the in-memory store
@@ -46,9 +50,12 @@ func main() {
 
 	router := gin.Default()
 
+	// Request ID middleware (added before CORS so every response gets it)
+	router.Use(middleware.RequestID())
+
 	// CORS configuration
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:8080", "https://fastchem.takumihomelab.works"},
+		AllowOrigins:     cfg.AllowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		AllowCredentials: true,
@@ -70,11 +77,11 @@ func main() {
 	// Initialize ranked match services
 	rankedMatchService := services.NewRankedMatchService()
 	matchmakingQueue := services.NewMatchmakingQueue(rankedMatchService)
-	rankedHandler := handlers.NewRankedHandler(rankedMatchService, matchmakingQueue)
+	rankedHandler := handlers.NewRankedHandler(rankedMatchService, matchmakingQueue, cfg.AllowedOriginsSet())
 
 	// Initialize custom room service
 	roomService := services.NewRoomService(rankedMatchService)
-	roomHandler := handlers.NewRoomHandler(roomService, rankedMatchService)
+	roomHandler := handlers.NewRoomHandler(roomService, rankedMatchService, cfg.AllowedOriginsSet())
 
 	// Periodically clean up stale ranked matches (no activity for 30 minutes)
 	go func() {
@@ -150,7 +157,7 @@ func main() {
 
 	// ── Serve the Next.js static export (frontend) ──────────────
 	// Resolve the frontend dist directory relative to the binary or CWD.
-	staticDir := os.Getenv("FRONTEND_DIR")
+	staticDir := cfg.FrontendDir
 	if staticDir == "" {
 		// Default: assume project root layout  <root>/backend  and  <root>/frontend/out
 		exe, _ := os.Executable()
@@ -161,7 +168,7 @@ func main() {
 		staticDir = filepath.Join(".", "..", "frontend", "out")
 	}
 
-	log.Printf("Serving frontend from: %s", staticDir)
+	slog.Info("serving frontend", "dir", staticDir)
 
 	// Serve static assets (JS, CSS, images, etc.)
 	router.Use(func(c *gin.Context) {
@@ -215,8 +222,31 @@ func main() {
 		c.Next()
 	})
 
-	log.Printf("FastChem backend starting on :%s", port)
-	if err := router.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	slog.Info("FastChem backend starting", "port", cfg.Port)
+
+	srv := &http.Server{
+		Addr:    ":" + cfg.Port,
+		Handler: router,
 	}
+
+	// Graceful shutdown
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("failed to start server", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	slog.Info("shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Error("server forced to shutdown", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("server exited cleanly")
 }

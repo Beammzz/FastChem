@@ -62,7 +62,7 @@ export default function ProfileContent({ username }: { username: string }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a1a] text-white">
+      <div className="min-h-screen-safe bg-[#0a0a1a] text-white">
         <Navbar />
         <div className="flex justify-center py-32">
           <div className="w-10 h-10 border-3 border-violet-400 border-t-transparent rounded-full animate-spin" />
@@ -73,9 +73,9 @@ export default function ProfileContent({ username }: { username: string }) {
 
   if (error || !profile) {
     return (
-      <div className="min-h-screen bg-[#0a0a1a] text-white">
+      <div className="min-h-screen-safe bg-[#0a0a1a] text-white">
         <Navbar />
-        <div className="max-w-4xl mx-auto px-6 pt-20 text-center">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-20 text-center">
           <div className="text-6xl mb-4">😕</div>
           <h1 className="text-2xl font-bold mb-2">ไม่พบผู้ใช้นี้</h1>
           <p className="text-gray-400 mb-6">
@@ -93,12 +93,12 @@ export default function ProfileContent({ username }: { username: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a1a] text-white">
+    <div className="min-h-screen-safe bg-[#0a0a1a] text-white">
       <Navbar />
 
-      <div className="max-w-5xl mx-auto px-6 pt-8 pb-16">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-8 pb-16 pb-safe">
         {/* Profile Header & Stats */}
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-8">
           {/* Profile Card */}
           <div className="bg-[#12122a] border border-white/5 rounded-2xl p-6">
             <h2 className="text-sm text-gray-500 font-medium mb-4">โปรไฟล์</h2>
@@ -116,59 +116,59 @@ export default function ProfileContent({ username }: { username: string }) {
           </div>
 
           {/* Stats Cards */}
-          <div className="md:col-span-2 grid grid-cols-2 gap-4">
+          <div className="md:col-span-2 grid grid-cols-2 gap-3 sm:gap-4">
             {/* High Score */}
-            <div className="bg-[#12122a] border border-white/5 rounded-2xl p-6 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center text-2xl">
+            <div className="bg-[#12122a] border border-white/5 rounded-2xl p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-amber-500/10 flex items-center justify-center text-xl sm:text-2xl shrink-0">
                 🏅
               </div>
-              <div>
-                <p className="text-xs text-gray-500 font-medium">คะแนนสูงสุดต่อเกม</p>
-                <p className="text-3xl font-black text-white">
+              <div className="min-w-0">
+                <p className="text-[10px] sm:text-xs text-gray-500 font-medium">คะแนนสูงสุดต่อเกม</p>
+                <p className="text-xl sm:text-3xl font-black text-white">
                   {profile.stats.highScore}
-                  <span className="text-sm text-gray-500 font-normal ml-1">คะแนน</span>
+                  <span className="text-[10px] sm:text-sm text-gray-500 font-normal ml-1">คะแนน</span>
                 </p>
               </div>
             </div>
 
             {/* Average Time */}
-            <div className="bg-[#12122a] border border-white/5 rounded-2xl p-6 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center text-2xl">
+            <div className="bg-[#12122a] border border-white/5 rounded-2xl p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-500/10 flex items-center justify-center text-xl sm:text-2xl shrink-0">
                 ⏱️
               </div>
-              <div>
-                <p className="text-xs text-gray-500 font-medium">เวลาเฉลี่ย</p>
-                <p className="text-3xl font-black text-white">
+              <div className="min-w-0">
+                <p className="text-[10px] sm:text-xs text-gray-500 font-medium">เวลาเฉลี่ย</p>
+                <p className="text-xl sm:text-3xl font-black text-white">
                   {formatTime(profile.stats.averageTime)}
-                  <span className="text-sm text-gray-500 font-normal ml-1">วินาที</span>
+                  <span className="text-[10px] sm:text-sm text-gray-500 font-normal ml-1">วินาที</span>
                 </p>
               </div>
             </div>
 
             {/* Total Points */}
-            <div className="bg-[#12122a] border border-white/5 rounded-2xl p-6 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center text-2xl">
+            <div className="bg-[#12122a] border border-white/5 rounded-2xl p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-violet-500/10 flex items-center justify-center text-xl sm:text-2xl shrink-0">
                 🏆
               </div>
-              <div>
-                <p className="text-xs text-gray-500 font-medium">คะแนนรวม</p>
-                <p className="text-3xl font-black text-violet-400">
+              <div className="min-w-0">
+                <p className="text-[10px] sm:text-xs text-gray-500 font-medium">คะแนนรวม</p>
+                <p className="text-xl sm:text-3xl font-black text-violet-400">
                   {profile.stats.totalPoints.toLocaleString()}
-                  <span className="text-sm text-gray-500 font-normal ml-1">คะแนน</span>
+                  <span className="text-[10px] sm:text-sm text-gray-500 font-normal ml-1">คะแนน</span>
                 </p>
               </div>
             </div>
 
             {/* Total Games */}
-            <div className="bg-[#12122a] border border-white/5 rounded-2xl p-6 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center text-2xl">
+            <div className="bg-[#12122a] border border-white/5 rounded-2xl p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-purple-500/10 flex items-center justify-center text-xl sm:text-2xl shrink-0">
                 🎮
               </div>
-              <div>
-                <p className="text-xs text-gray-500 font-medium">เล่นไปทั้งหมด</p>
-                <p className="text-3xl font-black text-white">
+              <div className="min-w-0">
+                <p className="text-[10px] sm:text-xs text-gray-500 font-medium">เล่นไปทั้งหมด</p>
+                <p className="text-xl sm:text-3xl font-black text-white">
                   {profile.stats.totalGames}
-                  <span className="text-sm text-gray-500 font-normal ml-1">ครั้ง</span>
+                  <span className="text-[10px] sm:text-sm text-gray-500 font-normal ml-1">ครั้ง</span>
                 </p>
               </div>
             </div>
@@ -187,7 +187,7 @@ export default function ProfileContent({ username }: { username: string }) {
                 เล่น Ranked →
               </Link>
             </div>
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="text-center">
                 <div className="text-2xl font-extrabold text-blue-400">
                   {rankedStats.rating}
@@ -279,7 +279,7 @@ export default function ProfileContent({ username }: { username: string }) {
 
         {/* Game History */}
         <div className="bg-[#12122a] border border-white/5 rounded-2xl overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-white/5">
             <h2 className="text-lg font-bold text-white">ประวัติการเล่น</h2>
             <p className="text-xs text-gray-500">
               แสดง {profile.history.length} จาก {profile.total} รายการ
@@ -294,14 +294,14 @@ export default function ProfileContent({ username }: { username: string }) {
           ) : (
             <>
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full min-w-[480px]">
                   <thead>
                     <tr className="border-b border-white/5 text-xs text-gray-500 uppercase tracking-wider">
-                      <th className="text-left px-6 py-3">วัน-เวลา</th>
-                      <th className="text-right px-6 py-3">คะแนน</th>
-                      <th className="text-right px-6 py-3">ถูก/ทั้งหมด</th>
-                      <th className="text-right px-6 py-3">ความแม่นยำ</th>
-                      <th className="text-right px-6 py-3">เวลาที่ใช้</th>
+                      <th className="text-left px-4 sm:px-6 py-3">วัน-เวลา</th>
+                      <th className="text-right px-4 sm:px-6 py-3">คะแนน</th>
+                      <th className="text-right px-4 sm:px-6 py-3">ถูก/ทั้งหมด</th>
+                      <th className="text-right px-4 sm:px-6 py-3">ความแม่นยำ</th>
+                      <th className="text-right px-4 sm:px-6 py-3">เวลาที่ใช้</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -317,18 +317,18 @@ export default function ProfileContent({ username }: { username: string }) {
                           key={game.id}
                           className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors"
                         >
-                          <td className="px-6 py-3 text-sm text-gray-400">
+                          <td className="px-4 sm:px-6 py-3 text-sm text-gray-400 whitespace-nowrap">
                             {formatDate(game.playedAt)}
                           </td>
-                          <td className="px-6 py-3 text-right">
+                          <td className="px-4 sm:px-6 py-3 text-right">
                             <span className="font-bold text-violet-400 tabular-nums">
                               {game.score}
                             </span>
                           </td>
-                          <td className="px-6 py-3 text-right text-sm text-gray-400 tabular-nums">
+                          <td className="px-4 sm:px-6 py-3 text-right text-sm text-gray-400 tabular-nums">
                             {game.correctAnswers}/{game.totalAnswered}
                           </td>
-                          <td className="px-6 py-3 text-right text-sm tabular-nums">
+                          <td className="px-4 sm:px-6 py-3 text-right text-sm tabular-nums">
                             <span
                               className={
                                 accuracy >= 70
@@ -341,7 +341,7 @@ export default function ProfileContent({ username }: { username: string }) {
                               {accuracy}%
                             </span>
                           </td>
-                          <td className="px-6 py-3 text-right text-sm text-gray-400 tabular-nums">
+                          <td className="px-4 sm:px-6 py-3 text-right text-sm text-gray-400 tabular-nums whitespace-nowrap">
                             {game.timeSpent > 0
                               ? `${game.timeSpent.toFixed(2)} วินาที`
                               : `${game.timeLimit} วินาที`}

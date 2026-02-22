@@ -7,10 +7,10 @@ export default function PlayPage() {
   const router = useRouter();
 
   return (
-    <div className="min-h-screen bg-[#0a0a1a] text-white">
+    <div className="min-h-screen-safe bg-[#0a0a1a] text-white">
       <Navbar />
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-8 sm:pt-12 pb-16">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-8 sm:pt-12 pb-16 pb-safe">
         {/* Header */}
         <div className="text-center mb-8 sm:mb-10">
           <h1 className="text-2xl sm:text-4xl font-extrabold mb-2">
@@ -21,7 +21,7 @@ export default function PlayPage() {
           <p className="text-gray-400">เลือกรูปแบบการเล่นที่ต้องการ</p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
           {/* Single Player */}
           <button
             onClick={() => router.push("/play/singleplayer")}

@@ -8,7 +8,7 @@ export default function Home() {
   const router = useRouter();
 
   return (
-    <div className="min-h-screen bg-[#0a0a1a] text-white">
+    <div className="min-h-screen-safe bg-[#0a0a1a] text-white">
       <Navbar />
 
       {/* Hero Section */}
@@ -28,16 +28,16 @@ export default function Home() {
             ฝึกโครงสร้างอะตอม เลขออกซิเดชัน โมลคอนเซ็ปต์ และอื่นๆ
             ด้วยคำถามที่สร้างอัตโนมัติ — เร็ว ฟรี!
           </p>
-          <div className="flex items-center justify-center gap-4 mt-8">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 mt-8 px-4 sm:px-0">
             <button
               onClick={() => router.push("/play")}
-              className="bg-violet-500 hover:bg-violet-600 text-white font-bold text-lg px-8 py-3.5 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-violet-500/20"
+              className="w-full sm:w-auto bg-violet-500 hover:bg-violet-600 text-white font-bold text-lg px-8 py-3.5 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-violet-500/20 min-h-[44px]"
             >
               เล่นเลย
             </button>
             <Link
               href="#topics"
-              className="border border-white/10 hover:border-white/20 text-gray-300 hover:text-white font-medium px-8 py-3.5 rounded-xl transition-all"
+              className="w-full sm:w-auto text-center border border-white/10 hover:border-white/20 text-gray-300 hover:text-white font-medium px-8 py-3.5 rounded-xl transition-all min-h-[44px] flex items-center justify-center"
             >
               เรียนรู้เพิ่มเติม
             </Link>
@@ -94,8 +94,8 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-white/5 py-8">
-        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between">
+      <footer className="border-t border-white/5 py-6 sm:py-8 pb-safe">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <span>⚗️</span>
             <span>FastChem v1.0</span>

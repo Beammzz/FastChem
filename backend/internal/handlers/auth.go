@@ -35,9 +35,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	// Check if username already exists
 	var exists int
-	err := database.DB.QueryRow("SELECT COUNT(*) FROM users WHERE LOWER(username) = LOWER(?)", req.Username).Scan(&exists)
+	err := database.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE LOWER(username) = LOWER(?)", req.Username).Scan(&exists)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
@@ -55,7 +57,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// Insert user
-	result, err := database.DB.Exec(
+	result, err := database.DB.ExecContext(ctx,
 		"INSERT INTO users (username, password_hash) VALUES (?, ?)",
 		req.Username, string(hash),
 	)
@@ -91,7 +93,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	var user models.User
-	err := database.DB.QueryRow(
+	err := database.DB.QueryRowContext(c.Request.Context(),
 		"SELECT id, username, password_hash, total_points, created_at FROM users WHERE LOWER(username) = LOWER(?)",
 		req.Username,
 	).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.TotalPoints, &user.CreatedAt)
@@ -128,14 +130,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 func (h *AuthHandler) Me(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	username := c.GetString("username")
+	ctx := c.Request.Context()
 
 	// Fetch user stats
 	var stats models.UserStats
 
 	// Get total points from user
-	database.DB.QueryRow("SELECT total_points FROM users WHERE id = ?", userID).Scan(&stats.TotalPoints)
+	database.DB.QueryRowContext(ctx, "SELECT total_points FROM users WHERE id = ?", userID).Scan(&stats.TotalPoints)
 
-	err := database.DB.QueryRow(`
+	err := database.DB.QueryRowContext(ctx, `
 		SELECT 
 			COUNT(*) as total_games,
 			COALESCE(MAX(score), 0) as high_score,

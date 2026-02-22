@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -15,35 +15,37 @@ import (
 	"github.com/takumi/fastchem/internal/services"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		// Allow connections from the frontend
-		return true
-	},
-}
-
 // RankedHandler handles ranked match WebSocket connections.
 type RankedHandler struct {
-	matchService *services.RankedMatchService
-	queue        *services.MatchmakingQueue
+	MatchSessionHandler
+	queue    *services.MatchmakingQueue
+	upgrader websocket.Upgrader
 	// Track active WebSocket connections by userID
 	connections sync.Map // userID → *websocket.Conn
 }
 
 // NewRankedHandler creates a new ranked handler.
-func NewRankedHandler(matchService *services.RankedMatchService, queue *services.MatchmakingQueue) *RankedHandler {
+func NewRankedHandler(matchService *services.RankedMatchService, queue *services.MatchmakingQueue, allowedOrigins map[string]bool) *RankedHandler {
 	return &RankedHandler{
-		matchService: matchService,
-		queue:        queue,
+		MatchSessionHandler: MatchSessionHandler{MatchService: matchService},
+		queue:               queue,
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin: func(r *http.Request) bool {
+				origin := r.Header.Get("Origin")
+				if origin == "" {
+					return true // non-browser clients
+				}
+				return allowedOrigins[origin]
+			},
+		},
 	}
 }
 
 // HandleWebSocket handles the WebSocket connection for ranked matches.
 // Route: GET /api/ranked/ws?token=<jwt>
 func (h *RankedHandler) HandleWebSocket(c *gin.Context) {
-	// Authenticate via query parameter (WebSocket can't send headers easily)
 	tokenStr := c.Query("token")
 	if tokenStr == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Token required"})
@@ -56,32 +58,33 @@ func (h *RankedHandler) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	// Upgrade to WebSocket
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("ranked ws: upgrade failed: %v", err)
+		slog.Warn("ranked ws: upgrade failed", "error", err)
 		return
 	}
 	defer conn.Close()
 
-	// Store connection
 	h.connections.Store(userID, conn)
 	defer h.connections.Delete(userID)
 
-	log.Printf("ranked ws: user %s (%d) connected", username, userID)
+	slog.Info("ranked ws: user connected", "username", username, "userID", userID)
 
-	// Get user rating
 	rating, _, _, _, dbErr := services.GetUserRankedStats(userID)
 	if dbErr != nil {
 		rating = models.DefaultRating
 	}
 
+	// Start the single pump goroutine that owns conn.ReadMessage() for the
+	// entire lifetime of this connection. Never call conn.ReadMessage() elsewhere.
+	msgChan := StartMsgPump(conn)
+
 	// Check if user is already in an active match (reconnect)
-	if existingMatch, ok := h.matchService.GetMatchByUserID(userID); ok {
+	if existingMatch, ok := h.MatchService.GetMatchByUserID(userID); ok {
 		if existingMatch.Status == "active" {
-			reconnected := h.matchService.HandleReconnect(existingMatch.MatchID, userID)
+			reconnected := h.MatchService.HandleReconnect(existingMatch.MatchID, userID)
 			if reconnected {
-				h.handleMatchSession(conn, existingMatch.MatchID, userID, username)
+				h.HandleMatchSession(conn, msgChan, existingMatch.MatchID, userID, username, h.sendMatchEnd)
 				return
 			}
 		}
@@ -97,81 +100,52 @@ func (h *RankedHandler) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	// Notify client they've joined the queue
 	sendWSMessage(conn, models.WSMessage{
 		Type:    models.EventQueueJoined,
-		Payload: map[string]interface{}{"message": "Searching for opponent...", "rating": rating},
+		Payload: models.QueueJoinedPayload{Message: "Searching for opponent...", Rating: rating},
 	})
 
-	// Wait for a match or disconnection
-	// Also handle pings from client while waiting
+	// Queue-phase wait: select on inbound messages (ping/disconnect) and the
+	// matchmaking channel simultaneously — no deadline tricks, no concurrent readers.
 	matchID := int64(0)
-	waitDone := make(chan struct{})
-
-	// Read loop for ping/cancel while in queue
-	go func() {
-		defer close(waitDone)
-		for {
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				// Client disconnected while in queue
+queueWait:
+	for {
+		select {
+		case raw, ok := <-msgChan:
+			if !ok || raw.Err != nil {
+				// Connection closed while queuing.
 				h.queue.Dequeue(userID)
 				return
 			}
 			var msg models.WSMessage
-			if err := json.Unmarshal(message, &msg); err != nil {
-				continue
-			}
-			if msg.Type == models.EventPing {
+			if err := json.Unmarshal(raw.Data, &msg); err == nil && msg.Type == models.EventPing {
 				sendWSMessage(conn, models.WSMessage{Type: models.EventPong})
 			}
+		case id, ok := <-matchedChan:
+			if !ok {
+				return
+			}
+			matchID = id
+			break queueWait
 		}
-	}()
-
-	// Wait for match
-	select {
-	case id, ok := <-matchedChan:
-		if !ok {
-			// Channel closed — cancelled
-			return
-		}
-		matchID = id
-	case <-waitDone:
-		// Client disconnected
-		return
 	}
 
-	// Match found!
-	h.handleMatchSession(conn, matchID, userID, username)
-}
-
-// handleMatchSession manages the WebSocket session for an active match.
-func (h *RankedHandler) handleMatchSession(conn *websocket.Conn, matchID int64, userID int64, username string) {
-	match, ok := h.matchService.GetMatch(matchID)
+	// Match found — send pre-session messages and delegate to shared handler
+	match, ok := h.MatchService.GetMatch(matchID)
 	if !ok {
-		sendWSMessage(conn, models.WSMessage{
-			Type:    models.EventError,
-			Payload: models.ErrorPayload{Message: "Match not found"},
-		})
 		return
 	}
 
-	// Determine opponent
 	var opponentID int64
 	var opponentName string
-	var sendChan chan models.WSMessage
-
 	if userID == match.Player1.UserID {
 		opponentID = match.Player2.UserID
 		opponentName = match.Player2.Username
-		sendChan = match.P1Send
 	} else {
 		opponentID = match.Player1.UserID
 		opponentName = match.Player1.Username
-		sendChan = match.P2Send
 	}
 
-	// Send MATCH_FOUND
 	sendWSMessage(conn, models.WSMessage{
 		Type: models.EventMatchFound,
 		Payload: models.MatchFoundPayload{
@@ -181,7 +155,6 @@ func (h *RankedHandler) handleMatchSession(conn *websocket.Conn, matchID int64, 
 		},
 	})
 
-	// Brief delay, then send MATCH_START
 	time.Sleep(1 * time.Second)
 
 	sendWSMessage(conn, models.WSMessage{
@@ -192,337 +165,19 @@ func (h *RankedHandler) handleMatchSession(conn *websocket.Conn, matchID int64, 
 		},
 	})
 
-	// Send first question (direct write is safe — outbound pump hasn't started yet)
-	h.sendNextQuestion(conn, matchID, userID)
-
-	// ── From this point, ALL writes go through sendChan to avoid concurrent writes ──
-
-	// Start disconnect checker goroutine for this match
-	stopChecker := make(chan struct{})
-	go h.disconnectChecker(matchID, userID, stopChecker)
-	defer close(stopChecker)
-
-	// Start the outbound message pump (only writer to conn after this point)
-	outDone := make(chan struct{})
-	go func() {
-		defer close(outDone)
-		for {
-			select {
-			case msg, ok := <-sendChan:
-				if !ok {
-					return // channel closed
-				}
-				if err := sendWSMessage(conn, msg); err != nil {
-					return
-				}
-			case <-match.Done:
-				return
-			}
-		}
-	}()
-
-	// Read loop — process client messages
-	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			log.Printf("ranked ws: read error for user %d: %v", userID, err)
-			h.matchService.HandleDisconnect(matchID, userID)
-			break
-		}
-
-		// If match was removed, stop processing
-		select {
-		case <-match.Done:
-			return
-		default:
-		}
-
-		var msg models.WSMessage
-		if err := json.Unmarshal(message, &msg); err != nil {
-			continue
-		}
-
-		switch msg.Type {
-		case models.EventPing:
-			// Route through channel to avoid concurrent writes
-			match.SafeSend(sendChan, models.WSMessage{Type: models.EventPong})
-
-		case models.EventSubmitAnswer:
-			h.handleSubmitAnswer(match, sendChan, matchID, userID, msg.Payload)
-
-		default:
-			match.SafeSend(sendChan, models.WSMessage{
-				Type:    models.EventError,
-				Payload: models.ErrorPayload{Message: "Unknown event type"},
-			})
-		}
-	}
-
-	// Wait for outbound pump to finish
-	<-outDone
+	h.SendNextQuestionWithCallback(conn, matchID, userID, h.sendMatchEnd)
+	h.HandleMatchSession(conn, msgChan, matchID, userID, username, h.sendMatchEnd)
 }
 
-// handleSubmitAnswer processes a SUBMIT_ANSWER event from a player.
-// All responses are routed through sendChan to avoid concurrent WebSocket writes.
-func (h *RankedHandler) handleSubmitAnswer(match *services.ActiveRankedMatch, sendChan chan models.WSMessage, matchID int64, userID int64, rawPayload interface{}) {
-	// Parse payload
-	payloadBytes, err := json.Marshal(rawPayload)
-	if err != nil {
-		return
-	}
-	var payload models.SubmitAnswerPayload
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		match.SafeSend(sendChan, models.WSMessage{
-			Type:    models.EventError,
-			Payload: models.ErrorPayload{Message: "Invalid answer payload"},
-		})
-		return
-	}
-
-	// Submit to match service
-	result, playerDone, err := h.matchService.SubmitAnswer(
-		matchID, userID, payload.Index, payload.SelectedIndex,
-	)
-	if err != nil || result == nil {
-		match.SafeSend(sendChan, models.WSMessage{
-			Type:    models.EventError,
-			Payload: models.ErrorPayload{Message: "Failed to process answer"},
-		})
-		return
-	}
-
-	// Send answer result via channel (avoids concurrent writes with outbound pump)
-	match.SafeSendTimeout(sendChan, models.WSMessage{
-		Type:    "ANSWER_RESULT",
-		Payload: result,
-	}, 5*time.Second)
-
-	// Notify opponent of progress update (via their send channel)
-	h.notifyOpponentProgress(matchID, userID)
-
-	if playerDone {
-		// Check if both players are done
-		if h.matchService.FinalizeIfBothDone(matchID) {
-			h.sendMatchEnd(matchID)
-		}
-		// If only this player is done, they wait for opponent
-	} else {
-		// Try to advance both players to the next question (synchronized)
-		go h.tryAdvanceBothPlayers(matchID)
-	}
-}
-
-// sendNextQuestion sends the next question to a single player (used for the first question only).
-func (h *RankedHandler) sendNextQuestion(conn *websocket.Conn, matchID int64, userID int64) {
-	q, idx, ok := h.matchService.GetCurrentQuestion(matchID, userID)
-	if !ok {
-		return // no more questions
-	}
-
-	// Mark question start time
-	h.matchService.StartQuestion(matchID, userID)
-
-	sendWSMessage(conn, models.WSMessage{
-		Type: models.EventQuestionStart,
-		Payload: models.QuestionStartPayload{
-			Index:      idx,
-			Question:   q.Question,
-			Choices:    q.Choices,
-			TimeLimit:  q.TimeLimit,
-			Difficulty: q.Difficulty,
-			Category:   q.Category,
-		},
-	})
-
-	// Start a timer for this question — auto-submit if player doesn't answer
-	h.startQuestionTimeout(conn, matchID, userID, idx, q.TimeLimit)
-}
-
-// startQuestionTimeout starts a goroutine that auto-submits a timeout answer
-// if the player hasn't answered within the time limit.
-func (h *RankedHandler) startQuestionTimeout(conn *websocket.Conn, matchID int64, userID int64, questionIdx int, timeLimitSec int) {
-	go func() {
-		timer := time.NewTimer(time.Duration(timeLimitSec) * time.Second)
-		defer timer.Stop()
-
-		<-timer.C
-
-		// Check if the player has already answered this question
-		_, currentIdx, exists := h.matchService.GetCurrentQuestion(matchID, userID)
-		if !exists || currentIdx != questionIdx {
-			return // already answered or match ended
-		}
-
-		// Auto-submit with wrong answer (timeout)
-		result, playerDone, _ := h.matchService.SubmitAnswer(matchID, userID, questionIdx, -1)
-		if result == nil {
-			return
-		}
-
-		// Send answer result via the player's send channel (safe from goroutine)
-		match, ok := h.matchService.GetMatch(matchID)
-		if !ok {
-			return
-		}
-		var sendChan chan models.WSMessage
-		if userID == match.Player1.UserID {
-			sendChan = match.P1Send
-		} else {
-			sendChan = match.P2Send
-		}
-		match.SafeSendTimeout(sendChan, models.WSMessage{Type: "ANSWER_RESULT", Payload: result}, 5*time.Second)
-
-		h.notifyOpponentProgress(matchID, userID)
-
-		if playerDone {
-			if h.matchService.FinalizeIfBothDone(matchID) {
-				h.sendMatchEnd(matchID)
-			}
-		} else {
-			// Try to advance both players (handles sync)
-			h.tryAdvanceBothPlayers(matchID)
-		}
-	}()
-}
-
-// tryAdvanceBothPlayers checks if both players have answered the current question.
-// If so, sends the next question to both after a brief delay.
-// It retries a few times in case the other player hasn't finished yet.
-func (h *RankedHandler) tryAdvanceBothPlayers(matchID int64) {
-	// Brief delay for answer result display
-	time.Sleep(2 * time.Second)
-
-	// Retry up to 3 times (with 1s gaps) in case the other player's answer
-	// is still being processed concurrently.
-	var ready bool
-	var idx int
-	var q *services.RankedQuestion
-	for attempt := 0; attempt < 3; attempt++ {
-		ready, idx, q = h.matchService.TryAdvanceQuestion(matchID)
-		if ready && q != nil {
-			break
-		}
-		// Check if match is still active before retrying
-		match, ok := h.matchService.GetMatch(matchID)
-		if !ok || match.Status != "active" {
-			return
-		}
-		if attempt < 2 {
-			time.Sleep(1 * time.Second)
-		}
-	}
-	if !ready || q == nil {
-		return
-	}
-
-	match, ok := h.matchService.GetMatch(matchID)
-	if !ok {
-		return
-	}
-
-	msg := models.WSMessage{
-		Type: models.EventQuestionStart,
-		Payload: models.QuestionStartPayload{
-			Index:      idx,
-			Question:   q.Question,
-			Choices:    q.Choices,
-			TimeLimit:  q.TimeLimit,
-			Difficulty: q.Difficulty,
-			Category:   q.Category,
-		},
-	}
-
-	// Send to both players via their channels
-	match.SafeSendTimeout(match.P1Send, msg, 5*time.Second)
-	match.SafeSendTimeout(match.P2Send, msg, 5*time.Second)
-
-	// Start timeout timers for both players on this question
-	h.startSyncedQuestionTimeout(matchID, match.Player1.UserID, idx, q.TimeLimit)
-	h.startSyncedQuestionTimeout(matchID, match.Player2.UserID, idx, q.TimeLimit)
-}
-
-// startSyncedQuestionTimeout starts an auto-timeout for a synchronized question.
-// Unlike startQuestionTimeout, this sends results via the send channel (not conn directly).
-func (h *RankedHandler) startSyncedQuestionTimeout(matchID int64, userID int64, questionIdx int, timeLimitSec int) {
-	go func() {
-		timer := time.NewTimer(time.Duration(timeLimitSec) * time.Second)
-		defer timer.Stop()
-		<-timer.C
-
-		_, currentIdx, exists := h.matchService.GetCurrentQuestion(matchID, userID)
-		if !exists || currentIdx != questionIdx {
-			return
-		}
-
-		result, playerDone, _ := h.matchService.SubmitAnswer(matchID, userID, questionIdx, -1)
-		if result == nil {
-			return
-		}
-
-		match, ok := h.matchService.GetMatch(matchID)
-		if !ok {
-			return
-		}
-
-		var sendChan chan models.WSMessage
-		if userID == match.Player1.UserID {
-			sendChan = match.P1Send
-		} else {
-			sendChan = match.P2Send
-		}
-		match.SafeSendTimeout(sendChan, models.WSMessage{Type: "ANSWER_RESULT", Payload: result}, 5*time.Second)
-
-		h.notifyOpponentProgress(matchID, userID)
-
-		if playerDone {
-			if h.matchService.FinalizeIfBothDone(matchID) {
-				h.sendMatchEnd(matchID)
-			}
-		} else {
-			h.tryAdvanceBothPlayers(matchID)
-		}
-	}()
-}
-
-// notifyOpponentProgress sends a progress update to the opponent.
-// It sends the answering player's (userID) stats to their opponent.
-func (h *RankedHandler) notifyOpponentProgress(matchID int64, userID int64) {
-	// Get the answering player's progress
-	answered, totalScore := h.matchService.GetPlayerProgress(matchID, userID)
-
-	match, ok := h.matchService.GetMatch(matchID)
-	if !ok {
-		return
-	}
-
-	var opponentChan chan models.WSMessage
-	if userID == match.Player1.UserID {
-		opponentChan = match.P2Send
-	} else {
-		opponentChan = match.P1Send
-	}
-
-	// Non-blocking send
-	msg := models.WSMessage{
-		Type: "OPPONENT_PROGRESS",
-		Payload: map[string]interface{}{
-			"answered":   answered,
-			"totalScore": totalScore,
-		},
-	}
-	match.SafeSend(opponentChan, msg)
-}
-
-// sendMatchEnd sends the MATCH_END event to both players.
+// sendMatchEnd sends MATCH_END to both players with rating changes.
 func (h *RankedHandler) sendMatchEnd(matchID int64) {
-	match, ok := h.matchService.GetMatch(matchID)
+	match, ok := h.MatchService.GetMatch(matchID)
 	if !ok {
 		return
 	}
 
-	// Get payloads for each player
-	p1Payload := h.matchService.GetMatchEndPayload(matchID, match.Player1.UserID)
-	p2Payload := h.matchService.GetMatchEndPayload(matchID, match.Player2.UserID)
+	p1Payload := h.MatchService.GetMatchEndPayload(matchID, match.Player1.UserID)
+	p2Payload := h.MatchService.GetMatchEndPayload(matchID, match.Player2.UserID)
 
 	if p1Payload != nil {
 		match.SafeSendTimeout(match.P1Send, models.WSMessage{Type: models.EventMatchEnd, Payload: p1Payload}, 5*time.Second)
@@ -531,43 +186,10 @@ func (h *RankedHandler) sendMatchEnd(matchID int64) {
 		match.SafeSendTimeout(match.P2Send, models.WSMessage{Type: models.EventMatchEnd, Payload: p2Payload}, 5*time.Second)
 	}
 
-	// Clean up after a delay to let messages flush
 	go func() {
 		time.Sleep(5 * time.Second)
-		h.matchService.RemoveMatch(matchID)
+		h.MatchService.RemoveMatch(matchID)
 	}()
-}
-
-// disconnectChecker periodically checks if the opponent has disconnected too long.
-func (h *RankedHandler) disconnectChecker(matchID int64, userID int64, stop chan struct{}) {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ticker.C:
-			timedOut, loserID := h.matchService.CheckDisconnectTimeout(matchID)
-			if timedOut {
-				// Determine winner
-				match, ok := h.matchService.GetMatch(matchID)
-				if !ok {
-					return
-				}
-				var winnerID int64
-				if loserID == match.Player1.UserID {
-					winnerID = match.Player2.UserID
-				} else {
-					winnerID = match.Player1.UserID
-				}
-
-				h.matchService.ForceWin(matchID, winnerID)
-				h.sendMatchEnd(matchID)
-				return
-			}
-		}
-	}
 }
 
 // GetRankedStats handles GET /api/ranked/stats (authenticated).
@@ -592,7 +214,7 @@ func (h *RankedHandler) GetRankedStats(c *gin.Context) {
 func (h *RankedHandler) GetRankedHistory(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 
-	rows, err := database.DB.Query(`
+	rows, err := database.DB.QueryContext(c.Request.Context(), `
 		SELECT rm.id, rm.player1_id, rm.player2_id, rm.player1_score, rm.player2_score,
 		       rm.winner_id, rm.status, rm.created_at, rm.finished_at,
 		       u1.username as p1_name, u2.username as p2_name
@@ -641,6 +263,10 @@ func (h *RankedHandler) GetRankedHistory(c *gin.Context) {
 		}
 		history = append(history, e)
 	}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read match history"})
+		return
+	}
 
 	if history == nil {
 		history = []MatchHistoryEntry{}
@@ -651,7 +277,7 @@ func (h *RankedHandler) GetRankedHistory(c *gin.Context) {
 
 // GetRankedLeaderboard handles GET /api/ranked/leaderboard.
 func (h *RankedHandler) GetRankedLeaderboard(c *gin.Context) {
-	rows, err := database.DB.Query(`
+	rows, err := database.DB.QueryContext(c.Request.Context(), `
 		SELECT u.username, u.id, u.rating, u.ranked_wins, u.ranked_losses, u.highest_rating
 		FROM users u
 		WHERE u.ranked_wins + u.ranked_losses > 0
@@ -685,6 +311,10 @@ func (h *RankedHandler) GetRankedLeaderboard(c *gin.Context) {
 		}
 		e.Rank = rank
 		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read ranked leaderboard"})
+		return
 	}
 
 	if entries == nil {

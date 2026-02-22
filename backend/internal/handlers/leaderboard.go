@@ -3,6 +3,8 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/takumi/fastchem/internal/database"
@@ -10,17 +12,50 @@ import (
 	"github.com/takumi/fastchem/internal/services"
 )
 
+// leaderboardCache holds a cached leaderboard response with TTL.
+type leaderboardCache struct {
+	mu      sync.RWMutex
+	entries []models.LeaderboardEntry
+	updated time.Time
+	ttl     time.Duration
+}
+
+func newLeaderboardCache(ttl time.Duration) *leaderboardCache {
+	return &leaderboardCache{ttl: ttl}
+}
+
+func (c *leaderboardCache) get() ([]models.LeaderboardEntry, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.entries == nil || time.Since(c.updated) > c.ttl {
+		return nil, false
+	}
+	return c.entries, true
+}
+
+func (c *leaderboardCache) set(entries []models.LeaderboardEntry) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = entries
+	c.updated = time.Now()
+}
+
 // LeaderboardHandler handles leaderboard-related HTTP requests.
-type LeaderboardHandler struct{}
+type LeaderboardHandler struct {
+	cache *leaderboardCache
+}
 
 // NewLeaderboardHandler creates a new leaderboard handler.
 func NewLeaderboardHandler() *LeaderboardHandler {
-	return &LeaderboardHandler{}
+	return &LeaderboardHandler{
+		cache: newLeaderboardCache(30 * time.Second),
+	}
 }
 
 // SubmitScore handles POST /api/scores
 func (h *LeaderboardHandler) SubmitScore(c *gin.Context) {
 	userID := c.GetInt64("user_id")
+	ctx := c.Request.Context()
 
 	var req models.SubmitScoreRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -42,7 +77,7 @@ func (h *LeaderboardHandler) SubmitScore(c *gin.Context) {
 		return
 	}
 
-	tx, err := database.DB.Begin()
+	tx, err := database.DB.BeginTx(ctx, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save score"})
 		return
@@ -50,7 +85,7 @@ func (h *LeaderboardHandler) SubmitScore(c *gin.Context) {
 	defer tx.Rollback()
 
 	// Insert score record
-	result, err := tx.Exec(
+	result, err := tx.ExecContext(ctx,
 		"INSERT INTO scores (user_id, score, total_answered, correct_answers, difficulty, time_limit, time_spent) VALUES (?, ?, ?, ?, ?, ?, ?)",
 		userID, req.Score, req.TotalAnswered, req.CorrectAnswers, req.Difficulty, req.TimeLimit, req.TimeSpent,
 	)
@@ -62,7 +97,7 @@ func (h *LeaderboardHandler) SubmitScore(c *gin.Context) {
 	scoreID, _ := result.LastInsertId()
 
 	// Add score to user's total_points
-	_, err = tx.Exec("UPDATE users SET total_points = total_points + ? WHERE id = ?", req.Score, userID)
+	_, err = tx.ExecContext(ctx, "UPDATE users SET total_points = total_points + ? WHERE id = ?", req.Score, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update points"})
 		return
@@ -75,7 +110,7 @@ func (h *LeaderboardHandler) SubmitScore(c *gin.Context) {
 
 	// Get updated total points
 	var totalPoints int
-	database.DB.QueryRow("SELECT total_points FROM users WHERE id = ?", userID).Scan(&totalPoints)
+	database.DB.QueryRowContext(ctx, "SELECT total_points FROM users WHERE id = ?", userID).Scan(&totalPoints)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"id":          scoreID,
@@ -86,6 +121,12 @@ func (h *LeaderboardHandler) SubmitScore(c *gin.Context) {
 
 // GetLeaderboard handles GET /api/leaderboard
 func (h *LeaderboardHandler) GetLeaderboard(c *gin.Context) {
+	// Check cache first
+	if cached, ok := h.cache.get(); ok {
+		c.JSON(http.StatusOK, models.LeaderboardResponse{Entries: cached})
+		return
+	}
+
 	query := `
 		SELECT 
 			u.username,
@@ -100,7 +141,7 @@ func (h *LeaderboardHandler) GetLeaderboard(c *gin.Context) {
 		LIMIT 50
 	`
 
-	rows, err := database.DB.Query(query)
+	rows, err := database.DB.QueryContext(c.Request.Context(), query)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch leaderboard"})
 		return
@@ -124,10 +165,17 @@ func (h *LeaderboardHandler) GetLeaderboard(c *gin.Context) {
 		entry.Rank = rank
 		entries = append(entries, entry)
 	}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read leaderboard"})
+		return
+	}
 
 	if entries == nil {
 		entries = []models.LeaderboardEntry{}
 	}
+
+	// Store in cache
+	h.cache.set(entries)
 
 	c.JSON(http.StatusOK, models.LeaderboardResponse{
 		Entries: entries,
@@ -137,8 +185,9 @@ func (h *LeaderboardHandler) GetLeaderboard(c *gin.Context) {
 // GetUserScores handles GET /api/scores/me
 func (h *LeaderboardHandler) GetUserScores(c *gin.Context) {
 	userID := c.GetInt64("user_id")
+	ctx := c.Request.Context()
 
-	rows, err := database.DB.Query(`
+	rows, err := database.DB.QueryContext(ctx, `
 		SELECT id, score, total_answered, correct_answers, COALESCE(difficulty, 'easy'), time_limit, COALESCE(time_spent, 0), played_at
 		FROM scores
 		WHERE user_id = ?
@@ -161,6 +210,10 @@ func (h *LeaderboardHandler) GetUserScores(c *gin.Context) {
 		}
 		scores = append(scores, s)
 	}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read scores"})
+		return
+	}
 
 	if scores == nil {
 		scores = []models.Score{}
@@ -179,11 +232,12 @@ func (h *LeaderboardHandler) GetProfile(c *gin.Context) {
 	}
 	limit := 10
 	offset := (page - 1) * limit
+	ctx := c.Request.Context()
 
 	// Get user
 	var userID int64
 	var totalPoints int
-	err := database.DB.QueryRow("SELECT id, total_points FROM users WHERE LOWER(username) = LOWER(?)", username).Scan(&userID, &totalPoints)
+	err := database.DB.QueryRowContext(ctx, "SELECT id, total_points FROM users WHERE LOWER(username) = LOWER(?)", username).Scan(&userID, &totalPoints)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
@@ -192,7 +246,7 @@ func (h *LeaderboardHandler) GetProfile(c *gin.Context) {
 	// Get stats
 	var stats models.UserStats
 	stats.TotalPoints = totalPoints
-	err = database.DB.QueryRow(`
+	err = database.DB.QueryRowContext(ctx, `
 		SELECT 
 			COUNT(*) as total_games,
 			COALESCE(MAX(score), 0) as high_score,
@@ -214,10 +268,10 @@ func (h *LeaderboardHandler) GetProfile(c *gin.Context) {
 
 	// Get total count for pagination
 	var total int
-	database.DB.QueryRow("SELECT COUNT(*) FROM scores WHERE user_id = ?", userID).Scan(&total)
+	database.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM scores WHERE user_id = ?", userID).Scan(&total)
 
 	// Get game history
-	rows, err := database.DB.Query(`
+	rows, err := database.DB.QueryContext(ctx, `
 		SELECT id, score, total_answered, correct_answers, COALESCE(difficulty, 'easy'), time_limit, COALESCE(time_spent, 0), played_at
 		FROM scores
 		WHERE user_id = ?
@@ -239,6 +293,10 @@ func (h *LeaderboardHandler) GetProfile(c *gin.Context) {
 			continue
 		}
 		history = append(history, s)
+	}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read history"})
+		return
 	}
 	if history == nil {
 		history = []models.Score{}

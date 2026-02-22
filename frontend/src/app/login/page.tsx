@@ -35,10 +35,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a1a] text-white">
+    <div className="min-h-screen-safe bg-[#0a0a1a] text-white">
       <Navbar />
 
-      <div className="flex items-center justify-center px-6 pt-20 pb-16">
+      <div className="flex items-center justify-center px-4 sm:px-6 pt-12 sm:pt-20 pb-16 pb-safe">
         <div className="w-full max-w-sm">
           {/* Mode tabs */}
           <div className="flex bg-white/5 rounded-xl p-1 mb-8">

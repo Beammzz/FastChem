@@ -168,16 +168,16 @@ export default function GameOver({
         )}
 
         {/* Actions */}
-        <div className="flex gap-3 pt-2">
+        <div className="flex flex-col sm:flex-row gap-3 pt-2">
           <button
             onClick={onPlayAgain}
-            className="flex-1 bg-violet-500 hover:bg-violet-600 text-white font-bold py-3 rounded-xl transition-all hover:scale-[1.01] active:scale-[0.99]"
+            className="flex-1 bg-violet-500 hover:bg-violet-600 text-white font-bold py-3 rounded-xl transition-all hover:scale-[1.01] active:scale-[0.99] min-h-[44px]"
           >
             เล่นอีกครั้ง
           </button>
           <button
             onClick={onHome}
-            className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 font-bold py-3 rounded-xl transition-all"
+            className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 font-bold py-3 rounded-xl transition-all min-h-[44px]"
           >
             หน้าหลัก
           </button>

@@ -96,7 +96,7 @@ export default function Calculator() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-20 left-3 sm:bottom-4 sm:left-4 z-50 w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-base sm:text-lg font-bold shadow-lg bg-[#1a1a2e] border border-white/10 text-blue-400 hover:border-blue-500/40 hover:bg-blue-500/10 transition-all"
+        className="fixed bottom-24 left-3 sm:bottom-4 sm:left-4 z-50 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-base sm:text-lg font-bold shadow-lg bg-[#1a1a2e] border border-white/10 text-blue-400 hover:border-blue-500/40 hover:bg-blue-500/10 transition-all"
         title="เครื่องคิดเลข"
       >
         🔢

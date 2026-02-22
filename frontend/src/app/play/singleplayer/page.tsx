@@ -125,10 +125,10 @@ export default function SinglePlayerPage() {
   const canStart = !isCustom || selectedCategories.length > 0;
 
   return (
-    <div className="min-h-screen bg-[#0a0a1a] text-white">
+    <div className="min-h-screen-safe bg-[#0a0a1a] text-white">
       <Navbar />
 
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-16">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-16 pb-safe">
         {/* Back link */}
         <Link
           href="/play"

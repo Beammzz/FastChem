@@ -2,7 +2,7 @@ package database
 
 import (
 	"database/sql"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -12,8 +12,8 @@ import (
 var DB *sql.DB
 
 // Init opens the SQLite database and runs migrations.
-func Init() {
-	dbPath := os.Getenv("DB_PATH")
+// dbPath is the path to the SQLite file (e.g. from config).
+func Init(dbPath string) {
 	if dbPath == "" {
 		dbPath = "fastchem.db"
 	}
@@ -22,26 +22,34 @@ func Init() {
 	dir := filepath.Dir(dbPath)
 	if dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Fatalf("Failed to create database directory: %v", err)
+			slog.Error("failed to create database directory", "error", err)
+			os.Exit(1)
 		}
 	}
 
 	var err error
 	DB, err = sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
+		slog.Error("failed to open database", "error", err)
+		os.Exit(1)
 	}
 
 	// Enable WAL mode and foreign keys
 	DB.Exec("PRAGMA journal_mode=WAL")
 	DB.Exec("PRAGMA foreign_keys=ON")
 
+	// SQLite only supports a single writer. Limit open connections to avoid
+	// SQLITE_BUSY errors under concurrent writes.
+	DB.SetMaxOpenConns(2)
+	DB.SetMaxIdleConns(2)
+
 	if err := DB.Ping(); err != nil {
-		log.Fatalf("Failed to ping database: %v", err)
+		slog.Error("failed to ping database", "error", err)
+		os.Exit(1)
 	}
 
 	migrate()
-	log.Println("Database initialized successfully")
+	slog.Info("database initialized successfully")
 }
 
 func migrate() {
@@ -134,7 +142,8 @@ func migrate() {
 
 	for _, q := range queries {
 		if _, err := DB.Exec(q); err != nil {
-			log.Fatalf("Migration failed: %v\nQuery: %s", err, q)
+			slog.Error("migration failed", "error", err, "query", q)
+			os.Exit(1)
 		}
 	}
 

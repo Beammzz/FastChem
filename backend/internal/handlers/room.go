@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -16,16 +16,28 @@ import (
 
 // RoomHandler handles custom room WebSocket connections.
 type RoomHandler struct {
-	roomService  *services.RoomService
-	matchService *services.RankedMatchService
-	connections  sync.Map // userID → *websocket.Conn
+	MatchSessionHandler
+	roomService *services.RoomService
+	upgrader    websocket.Upgrader
+	connections sync.Map // userID → *websocket.Conn
 }
 
 // NewRoomHandler creates a new room handler.
-func NewRoomHandler(roomService *services.RoomService, matchService *services.RankedMatchService) *RoomHandler {
+func NewRoomHandler(roomService *services.RoomService, matchService *services.RankedMatchService, allowedOrigins map[string]bool) *RoomHandler {
 	return &RoomHandler{
-		roomService:  roomService,
-		matchService: matchService,
+		MatchSessionHandler: MatchSessionHandler{MatchService: matchService},
+		roomService:         roomService,
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin: func(r *http.Request) bool {
+				origin := r.Header.Get("Origin")
+				if origin == "" {
+					return true
+				}
+				return allowedOrigins[origin]
+			},
+		},
 	}
 }
 
@@ -47,9 +59,9 @@ func (h *RoomHandler) HandleWebSocket(c *gin.Context) {
 	action := c.Query("action")
 	code := c.Query("code")
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("room ws: upgrade failed: %v", err)
+		slog.Warn("room ws: upgrade failed", "error", err)
 		return
 	}
 	defer conn.Close()
@@ -57,7 +69,7 @@ func (h *RoomHandler) HandleWebSocket(c *gin.Context) {
 	h.connections.Store(userID, conn)
 	defer h.connections.Delete(userID)
 
-	log.Printf("room ws: user %s (%d) connected, action=%s", username, userID, action)
+	slog.Info("room ws: user connected", "username", username, "userID", userID, "action", action)
 
 	switch action {
 	case "create":
@@ -76,74 +88,54 @@ func (h *RoomHandler) HandleWebSocket(c *gin.Context) {
 func (h *RoomHandler) handleCreate(conn *websocket.Conn, hostID int64, hostName string) {
 	roomCode := h.roomService.CreateRoom(hostID, hostName)
 
-	// Send room code to host
 	sendWSMessage(conn, models.WSMessage{
 		Type: "ROOM_CREATED",
-		Payload: map[string]interface{}{
-			"code":    roomCode,
-			"message": "รอผู้เล่นเข้าร่วม...",
+		Payload: models.RoomCreatedPayload{
+			Code:    roomCode,
+			Message: "รอผู้เล่นเข้าร่วม...",
 		},
 	})
 
-	// Wait for guest to join (poll) or handle pings
-	guestJoined := make(chan struct{})
-	readDone := make(chan struct{})
+	// Single pump goroutine owns conn.ReadMessage() for the connection lifetime.
+	msgChan := StartMsgPump(conn)
 
-	go func() {
-		defer close(readDone)
-		for {
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				// Host disconnected
+	// Host wait loop: select on inbound messages and a ticker that polls for a
+	// guest. No read-deadline tricks — no concurrent readers.
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+createWait:
+	for {
+		select {
+		case raw, ok := <-msgChan:
+			if !ok || raw.Err != nil {
 				h.roomService.RemoveRoom(roomCode)
 				return
 			}
 			var msg models.WSMessage
-			if err := json.Unmarshal(message, &msg); err != nil {
-				continue
-			}
-			if msg.Type == models.EventPing {
+			if err := json.Unmarshal(raw.Data, &msg); err == nil && msg.Type == models.EventPing {
 				sendWSMessage(conn, models.WSMessage{Type: models.EventPong})
 			}
-		}
-	}()
-
-	// Poll for guest joining
-	go func() {
-		ticker := time.NewTicker(300 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-readDone:
+			// Check immediately after a message in case the guest just joined.
+			if room, ok := h.roomService.GetRoom(roomCode); ok && room.GuestID != 0 {
+				break createWait
+			}
+		case <-ticker.C:
+			room, ok := h.roomService.GetRoom(roomCode)
+			if !ok {
 				return
-			case <-ticker.C:
-				room, ok := h.roomService.GetRoom(roomCode)
-				if !ok {
-					return
-				}
-				if room.GuestID != 0 {
-					close(guestJoined)
-					return
-				}
+			}
+			if room.GuestID != 0 {
+				break createWait
 			}
 		}
-	}()
-
-	// Wait for guest or disconnection
-	select {
-	case <-guestJoined:
-		// Guest joined!
-	case <-readDone:
-		// Host disconnected
-		return
 	}
+	ticker.Stop()
 
 	room, ok := h.roomService.GetRoom(roomCode)
 	if !ok {
 		return
 	}
 
-	// Start the match
 	match, err := h.roomService.StartMatch(roomCode)
 	if err != nil {
 		sendWSMessage(conn, models.WSMessage{
@@ -153,7 +145,6 @@ func (h *RoomHandler) handleCreate(conn *websocket.Conn, hostID int64, hostName 
 		return
 	}
 
-	// Notify host: match found
 	sendWSMessage(conn, models.WSMessage{
 		Type: models.EventMatchFound,
 		Payload: models.MatchFoundPayload{
@@ -173,11 +164,8 @@ func (h *RoomHandler) handleCreate(conn *websocket.Conn, hostID int64, hostName 
 		},
 	})
 
-	// Send first question
-	h.sendNextQuestion(conn, match.MatchID, hostID)
-
-	// Run the match session (reuse ranked match logic)
-	h.handleMatchSession(conn, match.MatchID, hostID, hostName, roomCode)
+	h.SendNextQuestionWithCallback(conn, match.MatchID, hostID, h.sendMatchEnd)
+	h.HandleMatchSession(conn, msgChan, match.MatchID, hostID, hostName, h.sendMatchEnd)
 }
 
 // handleJoin handles a guest joining a room by code.
@@ -199,76 +187,64 @@ func (h *RoomHandler) handleJoin(conn *websocket.Conn, guestID int64, guestName 
 		return
 	}
 
-	// Send waiting message
 	sendWSMessage(conn, models.WSMessage{
 		Type: "ROOM_JOINED",
-		Payload: map[string]interface{}{
-			"code":    code,
-			"message": "เข้าร่วมห้องสำเร็จ กำลังเริ่มเกม...",
+		Payload: models.RoomJoinedPayload{
+			Code:    code,
+			Message: "เข้าร่วมห้องสำเร็จ กำลังเริ่มเกม...",
 		},
 	})
 
-	// Wait for match to start (host triggers start)
-	matchReady := make(chan int64)
-	readDone := make(chan struct{})
+	// Single pump goroutine owns conn.ReadMessage() for the connection lifetime.
+	msgChan := StartMsgPump(conn)
 
-	go func() {
-		defer close(readDone)
-		for {
-			_, message, err := conn.ReadMessage()
-			if err != nil {
+	// Guest wait loop: select on inbound messages and a ticker that polls for the
+	// match to start. No read-deadline tricks — no concurrent readers.
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+	waitStart := time.Now()
+	var matchID int64
+joinWait:
+	for {
+		if time.Since(waitStart) > 30*time.Second {
+			sendWSMessage(conn, models.WSMessage{
+				Type:    models.EventError,
+				Payload: models.ErrorPayload{Message: "หมดเวลารอ"},
+			})
+			return
+		}
+		select {
+		case raw, ok := <-msgChan:
+			if !ok || raw.Err != nil {
 				return
 			}
 			var msg models.WSMessage
-			if err := json.Unmarshal(message, &msg); err != nil {
-				continue
-			}
-			if msg.Type == models.EventPing {
+			if err := json.Unmarshal(raw.Data, &msg); err == nil && msg.Type == models.EventPing {
 				sendWSMessage(conn, models.WSMessage{Type: models.EventPong})
 			}
-		}
-	}()
-
-	go func() {
-		ticker := time.NewTicker(300 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-readDone:
+			// Check immediately after a message.
+			if room, ok := h.roomService.GetRoom(code); ok && room.Status == "active" && room.MatchID != 0 {
+				matchID = room.MatchID
+				break joinWait
+			}
+		case <-ticker.C:
+			room, ok := h.roomService.GetRoom(code)
+			if !ok {
 				return
-			case <-ticker.C:
-				room, ok := h.roomService.GetRoom(code)
-				if !ok {
-					return
-				}
-				if room.Status == "active" && room.MatchID != 0 {
-					matchReady <- room.MatchID
-					return
-				}
+			}
+			if room.Status == "active" && room.MatchID != 0 {
+				matchID = room.MatchID
+				break joinWait
 			}
 		}
-	}()
-
-	var matchID int64
-	select {
-	case mid := <-matchReady:
-		matchID = mid
-	case <-readDone:
-		return
-	case <-time.After(30 * time.Second):
-		sendWSMessage(conn, models.WSMessage{
-			Type:    models.EventError,
-			Payload: models.ErrorPayload{Message: "หมดเวลารอ"},
-		})
-		return
 	}
+	ticker.Stop()
 
 	room, ok := h.roomService.GetRoom(code)
 	if !ok {
 		return
 	}
 
-	// Send match found to guest
 	sendWSMessage(conn, models.WSMessage{
 		Type: models.EventMatchFound,
 		Payload: models.MatchFoundPayload{
@@ -288,280 +264,19 @@ func (h *RoomHandler) handleJoin(conn *websocket.Conn, guestID int64, guestName 
 		},
 	})
 
-	// Send first question
-	h.sendNextQuestion(conn, matchID, guestID)
-
-	// Run match session
-	h.handleMatchSession(conn, matchID, guestID, guestName, code)
-}
-
-// handleMatchSession manages the WebSocket session for an active custom match.
-// This is essentially the same as ranked but without rating changes.
-func (h *RoomHandler) handleMatchSession(conn *websocket.Conn, matchID int64, userID int64, username string, roomCode string) {
-	match, ok := h.matchService.GetMatch(matchID)
-	if !ok {
-		sendWSMessage(conn, models.WSMessage{
-			Type:    models.EventError,
-			Payload: models.ErrorPayload{Message: "Match not found"},
-		})
-		return
-	}
-
-	var sendChan chan models.WSMessage
-	if userID == match.Player1.UserID {
-		sendChan = match.P1Send
-	} else {
-		sendChan = match.P2Send
-	}
-
-	// Start disconnect checker
-	stopChecker := make(chan struct{})
-	go h.disconnectChecker(matchID, userID, stopChecker)
-	defer close(stopChecker)
-
-	// Start outbound message pump
-	outDone := make(chan struct{})
-	go func() {
-		defer close(outDone)
-		for {
-			select {
-			case msg, ok := <-sendChan:
-				if !ok {
-					return // channel closed
-				}
-				if err := sendWSMessage(conn, msg); err != nil {
-					return
-				}
-			case <-match.Done:
-				return
-			}
-		}
-	}()
-
-	// Read loop
-	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			log.Printf("room ws: read error for user %d: %v", userID, err)
-			h.matchService.HandleDisconnect(matchID, userID)
-			break
-		}
-
-		// If match was removed, stop processing
-		select {
-		case <-match.Done:
-			return
-		default:
-		}
-
-		var msg models.WSMessage
-		if err := json.Unmarshal(message, &msg); err != nil {
-			continue
-		}
-
-		switch msg.Type {
-		case models.EventPing:
-			match.SafeSend(sendChan, models.WSMessage{Type: models.EventPong})
-
-		case models.EventSubmitAnswer:
-			h.handleSubmitAnswer(match, sendChan, matchID, userID, msg.Payload)
-
-		default:
-			match.SafeSend(sendChan, models.WSMessage{
-				Type:    models.EventError,
-				Payload: models.ErrorPayload{Message: "Unknown event type"},
-			})
-		}
-	}
-
-	<-outDone
-}
-
-// handleSubmitAnswer processes a SUBMIT_ANSWER event from a player in a custom match.
-func (h *RoomHandler) handleSubmitAnswer(match *services.ActiveRankedMatch, sendChan chan models.WSMessage, matchID int64, userID int64, rawPayload interface{}) {
-	payloadBytes, err := json.Marshal(rawPayload)
-	if err != nil {
-		return
-	}
-	var payload models.SubmitAnswerPayload
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		match.SafeSend(sendChan, models.WSMessage{
-			Type:    models.EventError,
-			Payload: models.ErrorPayload{Message: "Invalid answer payload"},
-		})
-		return
-	}
-
-	result, playerDone, err := h.matchService.SubmitAnswer(matchID, userID, payload.Index, payload.SelectedIndex)
-	if err != nil || result == nil {
-		match.SafeSend(sendChan, models.WSMessage{
-			Type:    models.EventError,
-			Payload: models.ErrorPayload{Message: "Failed to process answer"},
-		})
-		return
-	}
-
-	match.SafeSendTimeout(sendChan, models.WSMessage{Type: "ANSWER_RESULT", Payload: result}, 5*time.Second)
-
-	h.notifyOpponentProgress(matchID, userID)
-
-	if playerDone {
-		if h.matchService.FinalizeIfBothDone(matchID) {
-			h.sendMatchEnd(matchID)
-		}
-	} else {
-		go h.tryAdvanceBothPlayers(matchID)
-	}
-}
-
-// sendNextQuestion sends the next question to a single player.
-func (h *RoomHandler) sendNextQuestion(conn *websocket.Conn, matchID int64, userID int64) {
-	q, idx, ok := h.matchService.GetCurrentQuestion(matchID, userID)
-	if !ok {
-		return
-	}
-
-	h.matchService.StartQuestion(matchID, userID)
-
-	sendWSMessage(conn, models.WSMessage{
-		Type: models.EventQuestionStart,
-		Payload: models.QuestionStartPayload{
-			Index:      idx,
-			Question:   q.Question,
-			Choices:    q.Choices,
-			TimeLimit:  q.TimeLimit,
-			Difficulty: q.Difficulty,
-			Category:   q.Category,
-		},
-	})
-
-	h.startQuestionTimeout(matchID, userID, idx, q.TimeLimit)
-}
-
-// startQuestionTimeout starts a goroutine that auto-submits a timeout answer.
-func (h *RoomHandler) startQuestionTimeout(matchID int64, userID int64, questionIdx int, timeLimitSec int) {
-	go func() {
-		timer := time.NewTimer(time.Duration(timeLimitSec) * time.Second)
-		defer timer.Stop()
-		<-timer.C
-
-		_, currentIdx, exists := h.matchService.GetCurrentQuestion(matchID, userID)
-		if !exists || currentIdx != questionIdx {
-			return
-		}
-
-		result, playerDone, _ := h.matchService.SubmitAnswer(matchID, userID, questionIdx, -1)
-		if result == nil {
-			return
-		}
-
-		match, ok := h.matchService.GetMatch(matchID)
-		if !ok {
-			return
-		}
-		var sendChan chan models.WSMessage
-		if userID == match.Player1.UserID {
-			sendChan = match.P1Send
-		} else {
-			sendChan = match.P2Send
-		}
-		match.SafeSendTimeout(sendChan, models.WSMessage{Type: "ANSWER_RESULT", Payload: result}, 5*time.Second)
-
-		h.notifyOpponentProgress(matchID, userID)
-
-		if playerDone {
-			if h.matchService.FinalizeIfBothDone(matchID) {
-				h.sendMatchEnd(matchID)
-			}
-		} else {
-			h.tryAdvanceBothPlayers(matchID)
-		}
-	}()
-}
-
-// tryAdvanceBothPlayers advances both players to the next question.
-func (h *RoomHandler) tryAdvanceBothPlayers(matchID int64) {
-	time.Sleep(2 * time.Second)
-
-	var ready bool
-	var idx int
-	var q *services.RankedQuestion
-	for attempt := 0; attempt < 3; attempt++ {
-		ready, idx, q = h.matchService.TryAdvanceQuestion(matchID)
-		if ready && q != nil {
-			break
-		}
-		match, ok := h.matchService.GetMatch(matchID)
-		if !ok || match.Status != "active" {
-			return
-		}
-		if attempt < 2 {
-			time.Sleep(1 * time.Second)
-		}
-	}
-	if !ready || q == nil {
-		return
-	}
-
-	match, ok := h.matchService.GetMatch(matchID)
-	if !ok {
-		return
-	}
-
-	msg := models.WSMessage{
-		Type: models.EventQuestionStart,
-		Payload: models.QuestionStartPayload{
-			Index:      idx,
-			Question:   q.Question,
-			Choices:    q.Choices,
-			TimeLimit:  q.TimeLimit,
-			Difficulty: q.Difficulty,
-			Category:   q.Category,
-		},
-	}
-
-	match.SafeSendTimeout(match.P1Send, msg, 5*time.Second)
-	match.SafeSendTimeout(match.P2Send, msg, 5*time.Second)
-
-	h.startQuestionTimeout(matchID, match.Player1.UserID, idx, q.TimeLimit)
-	h.startQuestionTimeout(matchID, match.Player2.UserID, idx, q.TimeLimit)
-}
-
-// notifyOpponentProgress sends a progress update to the opponent.
-func (h *RoomHandler) notifyOpponentProgress(matchID int64, userID int64) {
-	answered, totalScore := h.matchService.GetPlayerProgress(matchID, userID)
-
-	match, ok := h.matchService.GetMatch(matchID)
-	if !ok {
-		return
-	}
-
-	var opponentChan chan models.WSMessage
-	if userID == match.Player1.UserID {
-		opponentChan = match.P2Send
-	} else {
-		opponentChan = match.P1Send
-	}
-
-	msg := models.WSMessage{
-		Type: "OPPONENT_PROGRESS",
-		Payload: map[string]interface{}{
-			"answered":   answered,
-			"totalScore": totalScore,
-		},
-	}
-	match.SafeSend(opponentChan, msg)
+	h.SendNextQuestionWithCallback(conn, matchID, guestID, h.sendMatchEnd)
+	h.HandleMatchSession(conn, msgChan, matchID, guestID, guestName, h.sendMatchEnd)
 }
 
 // sendMatchEnd sends MATCH_END to both players (no rating changes).
 func (h *RoomHandler) sendMatchEnd(matchID int64) {
-	match, ok := h.matchService.GetMatch(matchID)
+	match, ok := h.MatchService.GetMatch(matchID)
 	if !ok {
 		return
 	}
 
-	p1Payload := h.getCustomMatchEndPayload(match, match.Player1.UserID)
-	p2Payload := h.getCustomMatchEndPayload(match, match.Player2.UserID)
+	p1Payload := h.getCustomMatchEndPayload(match)
+	p2Payload := h.getCustomMatchEndPayload(match)
 
 	if p1Payload != nil {
 		match.SafeSendTimeout(match.P1Send, models.WSMessage{Type: models.EventMatchEnd, Payload: p1Payload}, 5*time.Second)
@@ -572,19 +287,18 @@ func (h *RoomHandler) sendMatchEnd(matchID int64) {
 
 	go func() {
 		time.Sleep(5 * time.Second)
-		h.matchService.RemoveMatch(matchID)
+		h.MatchService.RemoveMatch(matchID)
 	}()
 }
 
 // getCustomMatchEndPayload creates a MatchEndPayload with ratingChange=0.
-func (h *RoomHandler) getCustomMatchEndPayload(match *services.ActiveRankedMatch, userID int64) *models.MatchEndPayload {
+func (h *RoomHandler) getCustomMatchEndPayload(match *services.ActiveRankedMatch) *models.MatchEndPayload {
 	match.Mu().Lock()
 	defer match.Mu().Unlock()
 
 	p1 := match.Player1
 	p2 := match.Player2
 
-	// Determine winner by score
 	var winnerID int64
 	var winnerUsername string
 	if p1.TotalScore >= p2.TotalScore {
@@ -618,37 +332,7 @@ func (h *RoomHandler) getCustomMatchEndPayload(match *services.ActiveRankedMatch
 			TotalTime:      p2.TotalTime,
 			Combo:          p2.BestCombo,
 		},
-		RatingChange: 0, // No rating change for custom rooms
-		NewRating:    0, // Not applicable
-	}
-}
-
-// disconnectChecker periodically checks if the opponent has disconnected.
-func (h *RoomHandler) disconnectChecker(matchID int64, userID int64, stop chan struct{}) {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ticker.C:
-			timedOut, loserID := h.matchService.CheckDisconnectTimeout(matchID)
-			if timedOut {
-				match, ok := h.matchService.GetMatch(matchID)
-				if !ok {
-					return
-				}
-				var winnerID int64
-				if loserID == match.Player1.UserID {
-					winnerID = match.Player2.UserID
-				} else {
-					winnerID = match.Player1.UserID
-				}
-				h.matchService.ForceWin(matchID, winnerID)
-				h.sendMatchEnd(matchID)
-				return
-			}
-		}
+		RatingChange: 0,
+		NewRating:    0,
 	}
 }

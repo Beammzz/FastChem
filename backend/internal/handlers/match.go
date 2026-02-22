@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -35,7 +36,7 @@ func (h *MatchHandler) StartMatch(c *gin.Context) {
 	cfg := services.GetDifficultyConfig(req.Difficulty)
 
 	// Insert match into DB
-	result, err := database.DB.Exec(
+	result, err := database.DB.ExecContext(c.Request.Context(),
 		"INSERT INTO matches (user_id, difficulty, total_score, best_combo) VALUES (?, ?, 0, 0)",
 		userID, req.Difficulty,
 	)
@@ -124,7 +125,7 @@ func (h *MatchHandler) EndMatch(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.finalizeMatch(body.MatchID, userID)
+	resp, err := h.finalizeMatch(c.Request.Context(), body.MatchID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to finalize match"})
 		return
@@ -134,7 +135,7 @@ func (h *MatchHandler) EndMatch(c *gin.Context) {
 }
 
 // finalizeMatch persists match results to DB and cleans up in-memory state.
-func (h *MatchHandler) finalizeMatch(matchID, userID int64) (*models.EndMatchResponse, error) {
+func (h *MatchHandler) finalizeMatch(ctx context.Context, matchID, userID int64) (*models.EndMatchResponse, error) {
 	match, ok := services.GlobalMatchStore.Get(matchID)
 	if !ok {
 		return nil, nil
@@ -142,14 +143,14 @@ func (h *MatchHandler) finalizeMatch(matchID, userID int64) (*models.EndMatchRes
 
 	now := time.Now()
 
-	tx, err := database.DB.Begin()
+	tx, err := database.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 
 	// Update match record
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		"UPDATE matches SET total_score = ?, best_combo = ?, ended_at = ? WHERE id = ?",
 		match.TotalScore, match.BestCombo, now, matchID,
 	)
@@ -159,7 +160,7 @@ func (h *MatchHandler) finalizeMatch(matchID, userID int64) (*models.EndMatchRes
 
 	// Insert all question attempts
 	for _, a := range match.Attempts {
-		_, err = tx.Exec(
+		_, err = tx.ExecContext(ctx,
 			`INSERT INTO question_attempts 
 				(match_id, question_snapshot, correct, timed_out, time_spent_ms, score_awarded, combo_at_answer, combo_multiplier)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -182,7 +183,7 @@ func (h *MatchHandler) finalizeMatch(matchID, userID int64) (*models.EndMatchRes
 	cfg := services.GetDifficultyConfig(match.Difficulty)
 
 	// Insert into scores table so leaderboard/profile/history track this match
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO scores (user_id, score, total_answered, correct_answers, difficulty, time_limit, time_spent)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		userID, match.TotalScore, match.Answered, match.Correct, match.Difficulty,
@@ -193,7 +194,7 @@ func (h *MatchHandler) finalizeMatch(matchID, userID int64) (*models.EndMatchRes
 	}
 
 	// Update user total_points
-	_, err = tx.Exec("UPDATE users SET total_points = total_points + ? WHERE id = ?", match.TotalScore, userID)
+	_, err = tx.ExecContext(ctx, "UPDATE users SET total_points = total_points + ? WHERE id = ?", match.TotalScore, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +205,7 @@ func (h *MatchHandler) finalizeMatch(matchID, userID int64) (*models.EndMatchRes
 
 	// Get updated total points
 	var totalPoints int
-	database.DB.QueryRow("SELECT total_points FROM users WHERE id = ?", userID).Scan(&totalPoints)
+	database.DB.QueryRowContext(ctx, "SELECT total_points FROM users WHERE id = ?", userID).Scan(&totalPoints)
 
 	resp := &models.EndMatchResponse{
 		MatchID:        matchID,
