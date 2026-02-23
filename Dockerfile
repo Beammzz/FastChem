@@ -1,80 +1,82 @@
-# syntax=docker/dockerfile:1.7
-
-############################
-# Stage 1 — Frontend Builder
-############################
-FROM node:20-bullseye-slim AS frontend-builder
+# ─────────────────────────────────────────────
+# Stage 1 – Build the Next.js static export
+# ─────────────────────────────────────────────
+FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Install build dependencies only once (better cache)
-COPY frontend/package*.json ./
-RUN npm ci
+COPY frontend/package.json frontend/package-lock.json* frontend/yarn.lock* frontend/pnpm-lock.yaml* ./
 
-# Copy rest of frontend
-COPY frontend/ ./
+RUN \
+  if [ -f pnpm-lock.yaml ]; then \
+    npm install -g pnpm && pnpm install --frozen-lockfile; \
+  elif [ -f yarn.lock ]; then \
+    yarn install --frozen-lockfile; \
+  else \
+    npm ci; \
+  fi
 
-# Build static export (Next.js with output: "export")
-RUN npm run build
+COPY frontend/ .
 
+RUN \
+  if [ -f pnpm-lock.yaml ]; then \
+    pnpm run build; \
+  elif [ -f yarn.lock ]; then \
+    yarn build; \
+  else \
+    npm run build; \
+  fi
 
-############################
-# Stage 2 — Backend Builder
-############################
-FROM golang:1.24-alpine AS backend-builder
+# ─────────────────────────────────────────────
+# Stage 2 – Build the Go backend (CGO required for go-sqlite3)
+# ─────────────────────────────────────────────
+FROM golang:1.24-bookworm AS backend-builder
 
 WORKDIR /app/backend
 
-# Install required packages for cgo + sqlite build
-RUN apk add --no-cache \
-    build-base \
-    sqlite-dev \
-    git \
-    ca-certificates
+# Install C build tools needed by mattn/go-sqlite3
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      gcc \
+      libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Cache Go modules
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
-# Copy backend source
-COPY backend/ ./
+COPY backend/ .
 
-# Copy frontend static export
-COPY --from=frontend-builder /app/frontend/out ./frontend/out
+RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w" -o /fastchem-server ./cmd/server
 
-# Enable cgo and build for linux
-ENV CGO_ENABLED=1 GOOS=linux
+# ─────────────────────────────────────────────
+# Stage 3 – Minimal runtime image
+# ─────────────────────────────────────────────
+FROM debian:bookworm-slim AS runtime
 
-# Build optimized binary
-RUN go build \
-    -trimpath \
-    -ldflags="-s -w" \
-    -o /app/server \
-    ./cmd/server
+# ca-certificates for any outbound TLS; sqlite3 shared lib for CGO binary
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      libsqlite3-0 \
+    && rm -rf /var/lib/apt/lists/*
 
-
-############################
-# Stage 3 — Runtime (Minimal)
-############################
-FROM alpine:3.20
+# Non-root user
+RUN useradd -m -u 1001 fastchem
 
 WORKDIR /app
 
-# Copy binary
-COPY --from=backend-builder /app/server ./server
+# Copy compiled server and frontend static export
+COPY --from=backend-builder /fastchem-server ./fastchem-server
+COPY --from=frontend-builder /app/frontend/out ./frontend/out
 
-# Copy static frontend (if NOT embedding)
-COPY --from=backend-builder /app/backend/frontend/out ./frontend/out
+# Persistent data directory for the SQLite database
+RUN mkdir -p /data && chown fastchem:fastchem /data
 
-# Install runtime dependencies and create nonroot user
-RUN apk add --no-cache sqlite-libs ca-certificates \
-    && addgroup -S nonroot \
-    && adduser -S -G nonroot nonroot
-
-ENV PORT=8080
+USER fastchem
 
 EXPOSE 8080
 
-USER nonroot
+ENV PORT=8080 \
+    GIN_MODE=release \
+    DB_PATH=/data/fastchem.db \
+    FRONTEND_DIR=/app/frontend/out
 
-ENTRYPOINT ["/app/server"]
+CMD ["/app/fastchem-server"]

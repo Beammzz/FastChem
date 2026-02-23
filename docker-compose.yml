@@ -1,12 +1,33 @@
-version: '3.8'
 services:
   fastchem:
-    build: .
-    image: fastchem:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fastchem:latest
+    container_name: fastchem
+    restart: unless-stopped
     ports:
       - "8080:8080"
-    volumes:
-      - ./data:/data
     environment:
-      - DB_PATH=/data/fastchem.db
-    restart: unless-stopped
+      PORT: "8080"
+      GIN_MODE: "release"
+      DB_PATH: "/data/fastchem.db"
+      FRONTEND_DIR: "/app/frontend/out"
+      # Comma-separated list of allowed CORS origins.
+      # Change this to match your actual domain(s) in production.
+      ALLOWED_ORIGINS: "http://localhost:8080,https://yourdomain.com"
+      # Generate a strong secret, e.g.: openssl rand -hex 32
+      JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+    volumes:
+      # Persist the SQLite database across container restarts
+      - fastchem-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  fastchem-data:
+    driver: local

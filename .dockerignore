@@ -1,13 +1,24 @@
+x`# Version control
 .git
-node_modules
+.gitignore
+
+# Docker files (no need to copy into image)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Build artefacts
 frontend/node_modules
 frontend/.next
-backend/bin
-logs
-.env
-dist
-*.log
+frontend/out
+backend/server
+
+# Runtime / local dev data
+*.db
+*.db-shm
+*.db-wal
+logs/
+
+# Docs & misc
 README.md
 run.sh
-**/node_modules
-**/.env
