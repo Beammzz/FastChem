@@ -53,9 +53,12 @@ type Element struct {
 	MolarMass    float64 // g/mol – used for medium & hard questions
 }
 
-// Compound holds compound data for oxidation number questions
+// Compound holds compound data for oxidation number and state-of-matter questions
 type Compound struct {
 	Formula  string
+	Name     string // English name for display
+	NameTH   string // Thai name for display
+	State    string // standard state at 25 °C, 1 atm: "s", "l", "g", or "aq"
 	Elements []CompoundElement
 }
 

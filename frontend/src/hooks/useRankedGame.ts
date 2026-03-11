@@ -12,6 +12,7 @@ import {
   OpponentProgressPayload,
 } from "@/types";
 import { getRankedWebSocketURL } from "@/lib/api";
+import { triggerHaptic } from "@/lib/haptic";
 
 interface UseRankedGameReturn {
   phase: RankedGamePhase;
@@ -195,6 +196,11 @@ export function useRankedGame(): UseRankedGameReturn {
           const payload = msg.payload as AnswerResultPayload;
           clearTimer();
           setIsCorrect(payload.correct);
+          if (payload.timedOut) {
+            triggerHaptic("timeout");
+          } else {
+            triggerHaptic(payload.correct ? "correct" : "wrong");
+          }
           setLastScoreEarned(payload.scoreEarned);
           setLastSpeedBonus(payload.speedBonus);
           setLastComboMultiplier(payload.comboMultiplier);

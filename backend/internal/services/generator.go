@@ -53,6 +53,8 @@ func (g *QuestionGenerator) GenerateQuestionByCategories(categories []string) mo
 		return (&EasyGenerator{}).generateAtomicStructureQuestion()
 	case "oxidation_number":
 		return (&EasyGenerator{}).generateOxidationQuestion()
+	case "state_of_matter":
+		return (&EasyGenerator{}).generateStateOfMatterQuestion()
 	case "mole_concept":
 		return (&MediumGenerator{}).Generate()
 	case "dilution":
@@ -80,17 +82,60 @@ func (g *QuestionGenerator) ValidateAnswer(req models.ValidateRequest) models.Va
 	}
 }
 
+// ─── Randomness helpers ─────────────────────────────────────────
+
+// recentWindow is how many previous indices to remember per category
+const recentWindow = 8
+
+var (
+	recentOxidation []int
+	recentState     []int
+)
+
+// pickFreshIndex returns a random index in [0, n) that was not recently used.
+// It mutates the recent slice to record the picked index.
+func pickFreshIndex(n int, recent *[]int) int {
+	if n <= 1 {
+		return 0
+	}
+	for {
+		idx := rand.Intn(n)
+		dup := false
+		for _, r := range *recent {
+			if r == idx {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			*recent = append(*recent, idx)
+			if len(*recent) > recentWindow {
+				*recent = (*recent)[1:]
+			}
+			return idx
+		}
+		// If the pool is smaller than the window, clear history to avoid deadloop
+		if n <= len(*recent) {
+			*recent = nil
+		}
+	}
+}
+
 // ─── Easy Generator ──────────────────────────────────────────────
 
-// EasyGenerator produces atomic-structure and oxidation-number questions
+// EasyGenerator produces atomic-structure, oxidation-number, and state-of-matter questions
 type EasyGenerator struct{}
 
-// Generate creates one easy question
+// Generate creates one easy question, cycling randomly among three topics
 func (g *EasyGenerator) Generate() models.Question {
-	if rand.Intn(2) == 0 {
+	switch rand.Intn(3) {
+	case 0:
 		return g.generateAtomicStructureQuestion()
+	case 1:
+		return g.generateOxidationQuestion()
+	default:
+		return g.generateStateOfMatterQuestion()
 	}
-	return g.generateOxidationQuestion()
 }
 
 func (g *EasyGenerator) generateAtomicStructureQuestion() models.Question {
@@ -149,7 +194,8 @@ func (g *EasyGenerator) generateAtomicStructureQuestion() models.Question {
 }
 
 func (g *EasyGenerator) generateOxidationQuestion() models.Question {
-	compound := compounds[rand.Intn(len(compounds))]
+	idx := pickFreshIndex(len(compounds), &recentOxidation)
+	compound := compounds[idx]
 	target := compound.Elements[rand.Intn(len(compound.Elements))]
 
 	questionText := fmt.Sprintf(
@@ -166,6 +212,61 @@ func (g *EasyGenerator) generateOxidationQuestion() models.Question {
 		CorrectIndex: correctIndex,
 		TimeLimit:    GetDifficultyConfig("easy").TimeLimit,
 		Category:     "oxidation_number",
+		Difficulty:   "easy",
+	}
+}
+
+// stateLabels maps internal state codes to Thai display labels
+var stateLabels = map[string]string{
+	"s":  "ของแข็ง (s)",
+	"l":  "ของเหลว (l)",
+	"g":  "แก๊ส (g)",
+	"aq": "สารละลายในน้ำ (aq)",
+}
+
+func (g *EasyGenerator) generateStateOfMatterQuestion() models.Question {
+	idx := pickFreshIndex(len(stateCompounds), &recentState)
+	compound := stateCompounds[idx]
+
+	correctLabel := stateLabels[compound.State]
+
+	// Build distractors: the 3 states that are not the correct one
+	allStates := []string{"s", "l", "g", "aq"}
+	distractors := make([]string, 0, 3)
+	for _, s := range allStates {
+		if s != compound.State {
+			distractors = append(distractors, stateLabels[s])
+		}
+	}
+	rand.Shuffle(len(distractors), func(i, j int) {
+		distractors[i], distractors[j] = distractors[j], distractors[i]
+	})
+
+	choices := append(distractors[:3], correctLabel)
+	rand.Shuffle(len(choices), func(i, j int) {
+		choices[i], choices[j] = choices[j], choices[i]
+	})
+
+	correctIndex := 0
+	for i, c := range choices {
+		if c == correctLabel {
+			correctIndex = i
+			break
+		}
+	}
+
+	questionText := fmt.Sprintf(
+		"%s (%s) มีสถานะที่ภาวะมาตรฐาน (25°C, 1 atm) เป็นอย่างไร?",
+		compound.NameTH, compound.Formula,
+	)
+
+	return models.Question{
+		ID:           uuid.New().String(),
+		Question:     questionText,
+		Choices:      choices,
+		CorrectIndex: correctIndex,
+		TimeLimit:    GetDifficultyConfig("easy").TimeLimit,
+		Category:     "state_of_matter",
 		Difficulty:   "easy",
 	}
 }

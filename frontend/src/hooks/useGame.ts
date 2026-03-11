@@ -15,6 +15,7 @@ import {
   submitMatchAnswer,
   endMatch,
 } from "@/lib/api";
+import { triggerHaptic } from "@/lib/haptic";
 
 interface UseGameOptions {
   totalQuestions: number;
@@ -168,6 +169,7 @@ export function useGame({
 
     setSelectedIndex(-1);
     setIsCorrect(false);
+    triggerHaptic("timeout");
     setCombo(0);
     setTotalAnswered((prev) => prev + 1);
     questionNumberRef.current += 1;
@@ -220,6 +222,7 @@ export function useGame({
           });
 
           setIsCorrect(result.correct);
+          triggerHaptic(result.correct ? "correct" : "wrong");
           setScore(result.totalScore);
           setCombo(result.combo);
           setBestCombo((prev) => Math.max(prev, result.combo));
@@ -234,6 +237,7 @@ export function useGame({
           // Fallback to local
           const correct = index === question.correctIndex;
           setIsCorrect(correct);
+          triggerHaptic(correct ? "correct" : "wrong");
           if (correct) {
             setCorrectAnswers((prev) => prev + 1);
             setScore((prev) => prev + cfg.baseScore);
@@ -248,6 +252,7 @@ export function useGame({
           });
 
           setIsCorrect(result.correct);
+          triggerHaptic(result.correct ? "correct" : "wrong");
 
           if (result.correct) {
             setScore((prev) => prev + result.scoreEarned);
@@ -267,6 +272,7 @@ export function useGame({
         } catch {
           const correct = index === question.correctIndex;
           setIsCorrect(correct);
+          triggerHaptic(correct ? "correct" : "wrong");
           if (correct) {
             const localTimeSpent = questionTimeLimit - timeLeft;
             const speedBonus = Math.floor(

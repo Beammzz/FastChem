@@ -11,6 +11,7 @@ import {
   OpponentProgressPayload,
 } from "@/types";
 import { getRoomWebSocketURL } from "@/lib/api";
+import { triggerHaptic } from "@/lib/haptic";
 
 export type RoomPhase =
   | "idle"
@@ -209,6 +210,11 @@ export function useRoomGame(): UseRoomGameReturn {
           const payload = msg.payload as AnswerResultPayload;
           clearTimer();
           setIsCorrect(payload.correct);
+          if (payload.timedOut) {
+            triggerHaptic("timeout");
+          } else {
+            triggerHaptic(payload.correct ? "correct" : "wrong");
+          }
           setLastScoreEarned(payload.scoreEarned);
           setLastSpeedBonus(payload.speedBonus);
           setLastComboMultiplier(payload.comboMultiplier);

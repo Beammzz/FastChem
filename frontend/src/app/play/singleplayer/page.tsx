@@ -17,7 +17,7 @@ const DIFFICULTY_OPTIONS = [
   {
     label: "ง่าย",
     value: "easy",
-    desc: "โครงสร้างอะตอม & ออกซิเดชัน",
+    desc: "โครงสร้างอะตอม, ออกซิเดชัน & สถานะของสาร",
     color: "violet",
   },
   {
@@ -53,6 +53,13 @@ const ALL_CATEGORIES = [
     label: "เลขออกซิเดชัน",
     desc: "วิเคราะห์สารประกอบ",
     icon: "🔢",
+    difficulty: "easy",
+  },
+  {
+    id: "state_of_matter",
+    label: "สถานะของสาร",
+    desc: "ของแข็ง / ของเหลว / แก๊ส / สารละลาย (aq)",
+    icon: "🧊",
     difficulty: "easy",
   },
   {
