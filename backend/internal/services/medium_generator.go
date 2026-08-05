@@ -113,7 +113,7 @@ func generateSciDistractors(correct float64) ([]string, int) {
 	choices := make(map[string]bool)
 	choices[correctStr] = true
 
-	for len(choices) < 4 {
+	for attempt := 0; len(choices) < 4 && attempt < distractorAttempts; attempt++ {
 		factor := 0.4 + rand.Float64()*1.2 // 0.4–1.6
 		if factor > 0.9 && factor < 1.1 {
 			factor = 1.5
@@ -124,6 +124,7 @@ func generateSciDistractors(correct float64) ([]string, int) {
 			choices[dStr] = true
 		}
 	}
+	fillSciLadder(choices, correct)
 
 	choiceSlice := make([]string, 0, 4)
 	for c := range choices {
@@ -141,6 +142,23 @@ func generateSciDistractors(correct float64) ([]string, int) {
 		}
 	}
 	return choiceSlice, correctIndex
+}
+
+// fillSciLadder tops choices up to 4 by shifting the mantissa in 5% steps.
+// The mantissa is always in [1, 10), so a 5% shift always changes the second
+// decimal — every k yields a distinct string and the loop always terminates.
+func fillSciLadder(choices map[string]bool, correct float64) {
+	correctStr := formatSci(correct)
+	for k := 1; len(choices) < 4; k++ {
+		for _, f := range []float64{1 + 0.05*float64(k), 1 - 0.05*float64(k)} {
+			if s := formatSci(correct * f); s != correctStr {
+				choices[s] = true
+			}
+			if len(choices) >= 4 {
+				break
+			}
+		}
+	}
 }
 
 // formatSci formats a number in "a.bb × 10^n" style

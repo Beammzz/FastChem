@@ -42,6 +42,8 @@ Match state:
 - **Two combo curves exist and are not interchangeable.** Single player uses `ComboMultiplier` (3→1.2, 6→1.5, 10+→2.0); ranked uses `RankedComboMultiplier` (2→1.1, 3→1.2, 5+→1.5). Wrong answers reset the streak in both.
 - **Ranked questions must be reproducible from the seed.** `GenerateRankedQuestions(seed)` builds the whole set from a seeded `*rand.Rand` so both players get identical questions in identical order. Never use package-level `rand`, `time.Now()`, or map iteration order inside the seeded path — the `seeded*` helpers exist for exactly this reason.
 - **ELO updates go through `rating.go`** using `models.EloKFactor`; ratings floor at 0.
+- **Distractor generation must terminate for any answer value.** The random phase is capped at `distractorAttempts`, then `fillFloatLadder` / `fillSciLadder` top the set up using steps of exactly one unit in the last printed decimal, which always yields distinct strings. A `for len(choices) < 4` loop with no bound spins forever whenever the answer is small enough that too few distinct formatted values exist nearby — never write one.
+- **`pickFreshIndex` holds `recentMu`.** The `recent*` slices are package-level and Gin serves requests concurrently.
 - **Every store is mutex-guarded and sweeper-backed.** `MatchStore`, `QuestionStore`, `RankedMatchService`, and `RoomService` each expose a `CleanupOlderThan` / `CleanupStale*` method driven by `main.go`. A new store must follow the same shape or it grows without bound.
 - **Send on match channels only via `SafeSend` / `SafeSendTimeout`.** They recover from sends on closed channels, which is what keeps a disconnecting player from panicking the opponent's goroutine.
 - **`ActiveRankedMatch` state is guarded by its own mutex,** reachable through `Mu()`. Read-modify-write of scores, progress, or completion must hold it; `finalizeMatchLocked` assumes the caller already does.
@@ -59,9 +61,12 @@ Match state:
 ```bash
 go build ./...
 go vet ./...
+go test ./internal/services/ -race
 ```
 
-Chemistry changes need a manual sanity check of the generated question text and the correct answer. For seeded generation, confirm the same seed yields an identical question set across two runs.
+`generator_test.go` covers the invariants that scoring depends on: every question offers four distinct choices with the correct answer among them, distractor generation terminates for small answers, and concurrent generation is race-free. Tests wrap generation in `withDeadline` so a non-terminating generator fails instead of hanging the suite.
+
+Chemistry changes still need a manual sanity check of the generated question text and the correct answer.
 
 ## Child DOX Index
 

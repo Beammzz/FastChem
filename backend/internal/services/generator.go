@@ -2,8 +2,11 @@ package services
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/takumi/fastchem/internal/models"
@@ -87,7 +90,10 @@ func (g *QuestionGenerator) ValidateAnswer(req models.ValidateRequest) models.Va
 // recentWindow is how many previous indices to remember per category
 const recentWindow = 8
 
+// recentMu guards the recent* slices below. Gin serves requests concurrently,
+// so pickFreshIndex is called from many goroutines at once.
 var (
+	recentMu        sync.Mutex
 	recentOxidation []int
 	recentState     []int
 )
@@ -98,6 +104,8 @@ func pickFreshIndex(n int, recent *[]int) int {
 	if n <= 1 {
 		return 0
 	}
+	recentMu.Lock()
+	defer recentMu.Unlock()
 	for {
 		idx := rand.Intn(n)
 		dup := false
@@ -361,13 +369,50 @@ func generateOxidationDistractors(correct int) ([]string, int) {
 	return choiceSlice, correctIndex
 }
 
+// distractorAttempts bounds the random phase of distractor generation.
+// Past this, the deterministic ladder guarantees termination.
+const distractorAttempts = 200
+
+// formatPrecisionStep returns one unit in the last decimal place of a
+// printf-style float format, e.g. "%.2f mol" → 0.01.
+func formatPrecisionStep(format string) float64 {
+	i := strings.Index(format, "%.")
+	if i < 0 {
+		return 0.01
+	}
+	prec := 0
+	for j := i + 2; j < len(format) && format[j] >= '0' && format[j] <= '9'; j++ {
+		prec = prec*10 + int(format[j]-'0')
+	}
+	return math.Pow(10, -float64(prec))
+}
+
+// fillFloatLadder tops choices up to 4 using values one format-step apart,
+// walking away from zero so the sign of the answer is preserved. Each step is
+// exactly one unit in the last printed decimal, so every k yields a distinct
+// string — this always terminates, whatever the magnitude of correct.
+func fillFloatLadder(choices map[string]bool, correct float64, format string) {
+	step := formatPrecisionStep(format)
+	correctStr := fmt.Sprintf(format, correct)
+	dir := 1.0
+	if correct < 0 {
+		dir = -1.0
+	}
+	for k := 1; len(choices) < 4; k++ {
+		v := math.Round((correct+dir*float64(k)*step)/step) * step
+		if s := fmt.Sprintf(format, v); s != correctStr {
+			choices[s] = true
+		}
+	}
+}
+
 // generateFloatDistractors creates 4 unique plausible float choices
 func generateFloatDistractors(correct float64, format string) ([]string, int) {
 	choices := make(map[string]bool)
 	correctStr := fmt.Sprintf(format, correct)
 	choices[correctStr] = true
 
-	for len(choices) < 4 {
+	for attempt := 0; len(choices) < 4 && attempt < distractorAttempts; attempt++ {
 		factor := 0.5 + rand.Float64()*1.0
 		if factor > 0.9 && factor < 1.1 {
 			factor = 1.3
@@ -378,6 +423,8 @@ func generateFloatDistractors(correct float64, format string) ([]string, int) {
 			choices[dStr] = true
 		}
 	}
+	// Small answers have too few distinct values within ±50% to fill 4 slots.
+	fillFloatLadder(choices, correct, format)
 
 	choiceSlice := make([]string, 0, 4)
 	for c := range choices {

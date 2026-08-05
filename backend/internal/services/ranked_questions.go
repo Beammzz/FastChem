@@ -359,7 +359,7 @@ func seededFloatDistractors(rng *rand.Rand, correct float64, format string) ([]s
 	correctStr := fmt.Sprintf(format, correct)
 	choices[correctStr] = true
 
-	for len(choices) < 4 {
+	for attempt := 0; len(choices) < 4 && attempt < distractorAttempts; attempt++ {
 		factor := 0.5 + rng.Float64()*1.0
 		if factor > 0.9 && factor < 1.1 {
 			factor = 1.3
@@ -370,6 +370,8 @@ func seededFloatDistractors(rng *rand.Rand, correct float64, format string) ([]s
 			choices[dStr] = true
 		}
 	}
+	// Small answers have too few distinct values within ±50% to fill 4 slots.
+	fillFloatLadder(choices, correct, format)
 
 	choiceSlice := make([]string, 0, 4)
 	for c := range choices {
@@ -394,7 +396,7 @@ func seededSciDistractors(rng *rand.Rand, correct float64) ([]string, int) {
 	choices := make(map[string]bool)
 	choices[correctStr] = true
 
-	for len(choices) < 4 {
+	for attempt := 0; len(choices) < 4 && attempt < distractorAttempts; attempt++ {
 		factor := 0.4 + rng.Float64()*1.2
 		if factor > 0.9 && factor < 1.1 {
 			factor = 1.5
@@ -405,6 +407,7 @@ func seededSciDistractors(rng *rand.Rand, correct float64) ([]string, int) {
 			choices[dStr] = true
 		}
 	}
+	fillSciLadder(choices, correct)
 
 	choiceSlice := make([]string, 0, 4)
 	for c := range choices {
