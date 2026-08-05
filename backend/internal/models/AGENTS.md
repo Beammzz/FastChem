@@ -6,7 +6,7 @@ Plain data structs shared by handlers, services, and the database layer. Defines
 
 ## Ownership
 
-- `question.go` — `Question`, validate/answer request-response pairs, `Element`, `Compound`, `CompoundElement`
+- `question.go` — `Question`, validate/answer request-response pairs, `Element` (including its real `Isotopes` list), `Compound`, `CompoundElement`
 - `user.go` — `User`, `RegisterRequest`, `LoginRequest`, `AuthResponse`, `UserPublic`
 - `score.go` — `Score`, `SubmitScoreRequest`, `LeaderboardEntry`, `UserStats`, `ProfileResponse`
 - `match.go` — single-player match session types, `DefaultQuestionsPerMatch = 10`

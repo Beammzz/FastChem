@@ -51,6 +51,7 @@ type Element struct {
 	NameTH       string
 	AtomicNumber int
 	MolarMass    float64 // g/mol – used for medium & hard questions
+	Isotopes     []int   // real mass numbers, so neutron questions stay physical
 }
 
 // Compound holds compound data for oxidation number and state-of-matter questions

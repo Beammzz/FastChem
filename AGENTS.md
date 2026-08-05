@@ -113,10 +113,10 @@ Root-owned files:
 
 ## Verification
 
-No test suite and no CI exist in this repository. Run the checks that do exist:
+No CI exists in this repository, and Go tests cover only `backend/internal/services`. Run the checks that do exist:
 
 ```bash
-cd backend  && go build ./... && go vet ./...
+cd backend  && go build ./... && go vet ./... && go test ./... -race
 cd frontend && npm run lint && npm run build
 ```
 

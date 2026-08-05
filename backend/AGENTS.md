@@ -37,9 +37,10 @@ Delegated to children: `internal/database`, `internal/middleware`, `internal/mod
 go build ./...
 go vet ./...
 gofmt -l .        # must print nothing
+go test ./... -race
 ```
 
-No Go tests exist yet. Add `_test.go` files alongside the code they cover and update this section when a suite lands.
+Tests currently cover `internal/services` question generation only; other packages have none yet. Add `_test.go` files alongside the code they cover and extend this section as coverage grows.
 
 ## Child DOX Index
 

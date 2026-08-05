@@ -95,6 +95,8 @@ export default function RankedMatchUI({
         return "โครงสร้างอะตอม";
       case "oxidation_number":
         return "เลขออกซิเดชัน";
+      case "state_of_matter":
+        return "สถานะของสาร";
       case "mole_concept":
         return "โมลคอนเซ็ปต์";
       case "dilution":

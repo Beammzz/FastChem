@@ -27,6 +27,8 @@ export default function QuestionCard({
         return "โครงสร้างอะตอม";
       case "oxidation_number":
         return "เลขออกซิเดชัน";
+      case "state_of_matter":
+        return "สถานะของสาร";
       case "mole_concept":
         return "โมลคอนเซ็ปต์";
       case "dilution":
@@ -46,6 +48,8 @@ export default function QuestionCard({
         return "bg-cyan-500/10 text-cyan-400 border-cyan-500/20";
       case "oxidation_number":
         return "bg-purple-500/10 text-purple-400 border-purple-500/20";
+      case "state_of_matter":
+        return "bg-teal-500/10 text-teal-400 border-teal-500/20";
       case "mole_concept":
         return "bg-amber-500/10 text-amber-400 border-amber-500/20";
       case "dilution":
