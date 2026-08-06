@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { categoryLabel } from "@/data/categories";
 
 interface RankedMatchUIProps {
   // Question
@@ -86,27 +87,6 @@ export default function RankedMatchUI({
         return "text-red-400 bg-red-500/10 border-red-500/20";
       default:
         return "text-gray-400 bg-gray-500/10 border-gray-500/20";
-    }
-  };
-
-  const getCategoryLabel = (cat: string) => {
-    switch (cat) {
-      case "atomic_structure":
-        return "โครงสร้างอะตอม";
-      case "oxidation_number":
-        return "เลขออกซิเดชัน";
-      case "state_of_matter":
-        return "สถานะของสาร";
-      case "mole_concept":
-        return "โมลคอนเซ็ปต์";
-      case "dilution":
-        return "การเจือจาง";
-      case "preparing_solution":
-        return "เตรียมสารละลาย";
-      case "freezing_point":
-        return "จุดเยือกแข็ง";
-      default:
-        return cat;
     }
   };
 
@@ -228,7 +208,7 @@ export default function RankedMatchUI({
             {getDiffLabel(difficulty)}
           </span>
           <span className="text-[10px] sm:text-xs text-gray-500 hidden sm:inline">
-            {getCategoryLabel(category)}
+            {categoryLabel(category)}
           </span>
         </div>
 

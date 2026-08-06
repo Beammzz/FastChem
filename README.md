@@ -96,14 +96,37 @@ Frontend runs on `http://localhost:3000`.
 }
 ```
 
+## Question coverage
+
+Questions are generated, not stored, from 23 topics spanning บทที่ 2–13 of
+สาระเคมี in หลักสูตรแกนกลางการศึกษาขั้นพื้นฐาน พ.ศ. 2551 (ฉบับปรับปรุง พ.ศ. 2560)
+— the curriculum Thai ม.4–ม.6 chemistry is taught from:
+
+| Chapter | Topics |
+|---|---|
+| บทที่ 2 อะตอมและสมบัติของธาตุ | โครงสร้างอะตอม, การจัดเรียงอิเล็กตรอน |
+| บทที่ 3 พันธะเคมี | ชนิดพันธะเคมี, รูปร่างโมเลกุล (VSEPR) |
+| บทที่ 4 โมลและสูตรเคมี | โมลคอนเซ็ปต์, มวลต่อโมล, ร้อยละโดยมวล |
+| บทที่ 5 สารละลาย | ความเข้มข้น, การเจือจาง, เตรียมสารละลาย, จุดเยือกแข็ง |
+| บทที่ 6 ปริมาณสัมพันธ์ | ปริมาณสัมพันธ์, สารกำหนดปริมาณและร้อยละผลได้ |
+| บทที่ 7 แก๊ส | กฎของแก๊ส, แก๊สอุดมคติ (PV = nRT) |
+| บทที่ 8 อัตราการเกิดปฏิกิริยาเคมี | อัตราเฉลี่ยและอันดับของปฏิกิริยา |
+| บทที่ 9 สมดุลเคมี | ค่าคงที่สมดุล K |
+| บทที่ 10 กรด–เบส | pH, pOH, Ka |
+| บทที่ 11 เคมีไฟฟ้า | เลขออกซิเดชัน, E°cell |
+| บทที่ 12 เคมีอินทรีย์ | หมู่ฟังก์ชัน |
+| บทที่ 13 พอลิเมอร์ | มอนอเมอร์, แบบเติม / แบบควบแน่น |
+
+Single player can filter by any of these; ranked draws 4 easy, 3 medium and
+3 hard from the same registry.
+
 ## Extending
 
-The codebase is designed for extension:
-
-- **Medium/Hard modes** — add new generator methods in `services/generator.go`
-- **New question types** — add new compound/element data files
-- **PVP mode** — WebSocket support can be added to the Gin server
-- **Authentication** — add middleware to Gin router
+- **New question types** — implement `Topic` in `backend/internal/services/topics_*.go`,
+  append it to `topicRegistry`, and add its id to `frontend/src/data/categories.ts`.
+  See `backend/internal/services/AGENTS.md` for the full contract.
+- **New reference data** — add a data file next to `elements.go`; topics read
+  data, they never embed it.
 
 ## Docker: Build & Run with Persistent DB
 

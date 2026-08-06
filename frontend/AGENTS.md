@@ -13,6 +13,7 @@ Owned directly by this doc:
 - `tsconfig.json` (the `@/*` → `./src/*` alias), `tailwind.config.ts`, `postcss.config.mjs`, `.eslintrc.json`
 - `src/types/index.ts` — the TypeScript mirror of the backend JSON contract
 - `src/data/periodicTable.ts` — periodic table reference data for the in-game helper
+- `src/data/categories.ts` — the question-category table: id, Thai label, description, icon, difficulty, IPST chapter, and chip colours
 
 Delegated to children: `src/app`, `src/components`, `src/hooks`, `src/lib`.
 
@@ -21,6 +22,7 @@ Delegated to children: `src/app`, `src/components`, `src/hooks`, `src/lib`.
 - **Static export constraints are absolute.** No server components fetching at request time, no Route Handlers, no `next/image` optimization, no middleware, no server actions. Anything that needs a server belongs in the Go backend. `npm run build` fails loudly if this is violated.
 - **`trailingSlash: true` shapes the output.** Each route emits `<route>/index.html`, which is what the backend's static fallback resolves against. Dynamic user routes are handled client-side: `/profile/<username>/` is served by `profile/index.html` (the backend walks up to the nearest parent index) and the page reads the username from `window.location.pathname`, because the export cannot pre-render unknown paths.
 - **`src/types/index.ts` must match `backend/internal/models`** field for field, camelCase on both sides. Changing one without the other is an incomplete change.
+- **`src/data/categories.ts` must list every topic in `backend/internal/services` `topicRegistry`,** keyed by the same id. The backend stamps the id onto each question and the single-player page sends the ids back as filters; a topic missing here renders its raw `snake_case` id as a label and cannot be picked. `CHAPTERS` is the display order of the picker, so a new category also needs its chapter listed there.
 - **The API base URL comes from `NEXT_PUBLIC_API_URL` and defaults to `""`** — a relative base, correct for single-origin production. It is read only in `src/lib/api.ts`. `NEXT_PUBLIC_*` values are baked in at build time and are public; never put a secret there.
 - **The auth token lives in `localStorage` under `token`.** Any code reading it must guard `typeof window !== "undefined"` — the export pre-renders on the server.
 - **Import through the `@/` alias** (`@/lib/api`, `@/types`), not deep relative paths.
