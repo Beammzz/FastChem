@@ -77,11 +77,35 @@ Frontend runs on `http://localhost:3000`.
 
 ### API Endpoints
 
-| Method | Endpoint         | Description              |
-|--------|------------------|--------------------------|
-| GET    | `/api/question`  | Get a random question    |
-| POST   | `/api/validate`  | Validate an answer       |
-| GET    | `/api/health`    | Health check             |
+Everything below sits under `/api` behind an IP rate limiter (burst 30,
+refilling 10/s). Rows marked ✔ need an `Authorization: Bearer <token>` header;
+the two WebSocket routes take the same token as a `?token=` query parameter,
+since a browser cannot set headers on a WebSocket handshake.
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET  | `/api/question` | — | Generate a question. `?difficulty=easy\|medium\|hard`, or `?categories=<csv>` to draw from chosen topics |
+| POST | `/api/answer` | — | Submit `questionId` + `selectedIndex`; the server times the answer, marks it and returns the score |
+| POST | `/api/validate` | — | Legacy answer check, kept for older clients |
+| GET  | `/api/health` | — | Health check |
+| POST | `/api/auth/register` | — | Create an account |
+| POST | `/api/auth/login` | — | Exchange credentials for a JWT |
+| GET  | `/api/auth/me` | ✔ | The current user |
+| GET  | `/api/leaderboard` | — | Top scores |
+| GET  | `/api/profile/:username` | — | Public profile and score history (`?page=`) |
+| POST | `/api/scores` | ✔ | Record a finished single-player run |
+| GET  | `/api/scores/me` | ✔ | Your own score history |
+| POST | `/api/match/start` | ✔ | Start a server-tracked match |
+| POST | `/api/match/answer` | ✔ | Answer inside a match — additionally limited to burst 3, refilling 1/s |
+| POST | `/api/match/end` | ✔ | Finish a match and persist the result |
+| GET  | `/api/ranked/ws` | `?token=` | WebSocket: matchmaking and live ranked play |
+| GET  | `/api/ranked/stats` | ✔ | Your ELO, wins and losses |
+| GET  | `/api/ranked/history` | ✔ | Your past ranked matches |
+| GET  | `/api/ranked/leaderboard` | — | Ranked ladder |
+| GET  | `/api/room/ws` | `?token=` | WebSocket: custom rooms, `?action=create` or `?action=join&code=<code>` |
+
+Any path that does not start with `/api/` falls through to the Next.js static
+export in `frontend/out/`.
 
 ### Question Response
 
