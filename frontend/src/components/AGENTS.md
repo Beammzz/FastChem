@@ -26,7 +26,8 @@ Mode-specific UI:
 
 - **Props in, callbacks out.** Apart from `AuthProvider`, components take data and handlers as props and do not call `@/lib/api` or hold game state. Fetching belongs in `@/hooks` or the page.
 - **`AuthProvider` is the single source of auth truth.** It owns the `localStorage` `token` read/write; every consumer uses `useAuth()`. Do not touch `localStorage` for auth elsewhere.
-- **Never render or infer the correct answer before the server returns it.** `QuestionCard` shows a choice as correct only from the API's answer result.
+- **Never render or infer the correct answer before the server returns it.** `QuestionCard` marks a choice from its `revealedIndex` prop, which the hook fills in from the API's answer result — `Question` has no `correctIndex` to read. `revealedIndex` stays null while the question is open and when a submit failed, so a card that cannot reach the server highlights nothing and says the question went unscored rather than inventing a verdict.
+- **Category labels and colours come from `@/data/categories`.** `QuestionCard` and `RankedMatchUI` call `categoryLabel` / `categoryBadgeClass` rather than switching on the id themselves, so a topic added on the server is named in one place. Both helpers fall back for an unknown id instead of rendering nothing.
 - **Default-export one component per file**, named to match the filename. `AuthProvider.tsx` is the exception: it exports both `AuthProvider` and `useAuth` as named exports.
 - Prop shapes are declared as a local `interface <Name>Props` above the component.
 - Every file here is a client component (`"use client"`).

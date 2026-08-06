@@ -1,11 +1,18 @@
 "use client";
 
 import { Question } from "@/types";
+import { categoryBadgeClass, categoryLabel } from "@/data/categories";
 
 interface QuestionCardProps {
   question: Question;
   selectedIndex: number | null;
   isCorrect: boolean | null;
+  /**
+   * The right answer, which arrives with the server's marking rather than with
+   * the question. Null while the question is still open, and also when the
+   * submit failed and the answer stayed unknown.
+   */
+  revealedIndex: number | null;
   scoreEarned: number;
   speedBonus: number;
   comboMultiplier?: number;
@@ -16,61 +23,20 @@ export default function QuestionCard({
   question,
   selectedIndex,
   isCorrect,
+  revealedIndex,
   scoreEarned,
   speedBonus,
   comboMultiplier = 1,
   onAnswer,
 }: QuestionCardProps) {
-  const getCategoryLabel = (cat: string) => {
-    switch (cat) {
-      case "atomic_structure":
-        return "โครงสร้างอะตอม";
-      case "oxidation_number":
-        return "เลขออกซิเดชัน";
-      case "state_of_matter":
-        return "สถานะของสาร";
-      case "mole_concept":
-        return "โมลคอนเซ็ปต์";
-      case "dilution":
-        return "การเจือจาง";
-      case "preparing_solution":
-        return "เตรียมสารละลาย";
-      case "freezing_point":
-        return "จุดเยือกแข็ง";
-      default:
-        return cat;
-    }
-  };
-
-  const getCategoryColor = (cat: string) => {
-    switch (cat) {
-      case "atomic_structure":
-        return "bg-cyan-500/10 text-cyan-400 border-cyan-500/20";
-      case "oxidation_number":
-        return "bg-purple-500/10 text-purple-400 border-purple-500/20";
-      case "state_of_matter":
-        return "bg-teal-500/10 text-teal-400 border-teal-500/20";
-      case "mole_concept":
-        return "bg-amber-500/10 text-amber-400 border-amber-500/20";
-      case "dilution":
-        return "bg-rose-500/10 text-rose-400 border-rose-500/20";
-      case "preparing_solution":
-        return "bg-orange-500/10 text-orange-400 border-orange-500/20";
-      case "freezing_point":
-        return "bg-sky-500/10 text-sky-400 border-sky-500/20";
-      default:
-        return "bg-gray-500/10 text-gray-400 border-gray-500/20";
-    }
-  };
-
   const getChoiceStyle = (index: number) => {
     if (selectedIndex === null) {
       return "bg-[#12122a] border-white/5 hover:border-violet-500/40 hover:bg-violet-500/5 text-white cursor-pointer";
     }
-    if (index === question.correctIndex) {
+    if (index === revealedIndex) {
       return "bg-violet-500/10 border-violet-500/50 text-violet-300";
     }
-    if (index === selectedIndex && !isCorrect) {
+    if (index === selectedIndex && isCorrect === false) {
       return "bg-red-500/10 border-red-500/50 text-red-300";
     }
     return "bg-[#12122a] border-white/5 text-gray-600";
@@ -78,8 +44,8 @@ export default function QuestionCard({
 
   const getChoicePrefix = (index: number) => {
     if (selectedIndex === null) return "";
-    if (index === question.correctIndex) return "✓ ";
-    if (index === selectedIndex && !isCorrect) return "✗ ";
+    if (index === revealedIndex) return "✓ ";
+    if (index === selectedIndex && isCorrect === false) return "✗ ";
     return "";
   };
 
@@ -88,11 +54,11 @@ export default function QuestionCard({
       {/* Category badge */}
       <div className="flex justify-center mb-6">
         <span
-          className={`inline-block px-4 py-1.5 rounded-full text-xs font-semibold border tracking-wide uppercase ${getCategoryColor(
+          className={`inline-block px-4 py-1.5 rounded-full text-xs font-semibold border tracking-wide uppercase ${categoryBadgeClass(
             question.category
           )}`}
         >
-          {getCategoryLabel(question.category)}
+          {categoryLabel(question.category)}
         </span>
       </div>
 
@@ -130,10 +96,18 @@ export default function QuestionCard({
       {selectedIndex !== null && (
         <div
           className={`mt-5 text-center animate-fade-in ${
-            isCorrect ? "text-violet-400" : "text-red-400"
+            isCorrect === null
+              ? "text-gray-400"
+              : isCorrect
+              ? "text-violet-400"
+              : "text-red-400"
           }`}
         >
-          {selectedIndex === -1 ? (
+          {isCorrect === null ? (
+            <div className="text-base font-bold">
+              ⚠️ ตรวจคำตอบไม่สำเร็จ — ข้อนี้ไม่ถูกนับคะแนน
+            </div>
+          ) : selectedIndex === -1 ? (
             <div className="text-base font-bold">⏰ หมดเวลา!</div>
           ) : isCorrect ? (
             <div>

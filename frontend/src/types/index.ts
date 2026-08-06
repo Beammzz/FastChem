@@ -1,8 +1,9 @@
+// No correctIndex: the server withholds the answer until the question is
+// answered, then returns it on AnswerResponse / MatchAnswerResponse.
 export interface Question {
   id: string;
   question: string;
   choices: string[];
-  correctIndex: number;
   timeLimit: number;
   category: string;
   difficulty: string;

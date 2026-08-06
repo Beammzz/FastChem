@@ -2,10 +2,12 @@ package services
 
 import (
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/takumi/fastchem/internal/anticheat"
 	"github.com/takumi/fastchem/internal/database"
 	"github.com/takumi/fastchem/internal/models"
 )
@@ -255,6 +257,28 @@ func (rms *RankedMatchService) SubmitAnswer(
 	cfg := GetDifficultyConfig(q.Difficulty)
 	timedOut := timeSpent >= float64(cfg.TimeLimit)
 	correct := selectedIndex == q.CorrectIndex && !timedOut
+
+	// Room matches carry a negative synthetic MatchID and never touch ELO, so
+	// their findings are reported under a different mode.
+	mode := anticheat.ModeRanked
+	if matchID < 0 {
+		mode = anticheat.ModeRoom
+	}
+	verdict := anticheat.Evaluate(anticheat.Signal{
+		Subject:    anticheat.SubjectUser(userID),
+		UserID:     userID,
+		MatchID:    matchID,
+		Mode:       mode,
+		QuestionID: fmt.Sprintf("%d:%d", matchID, questionIndex),
+		Difficulty: q.Difficulty,
+		TimeSpent:  timeSpent,
+		TimeLimit:  cfg.TimeLimit,
+		Correct:    correct,
+		TimedOut:   timedOut,
+	})
+	if verdict.Rejected() {
+		correct = false
+	}
 
 	// Update combo
 	if correct {

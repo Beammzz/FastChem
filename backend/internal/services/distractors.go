@@ -120,9 +120,31 @@ func floatCandidates(correct float64, format string, values []float64) []string 
 		if math.IsNaN(v) || math.IsInf(v, 0) || !withinScale(correct, v) {
 			continue
 		}
-		out = append(out, fmt.Sprintf(format, snapTo(v, step)))
+		snapped := snapTo(v, step)
+		// A distractor that rounds away to "0.00" beside a non-zero answer is
+		// eliminated on sight and wastes a slot, however real the mistake
+		// behind it. withinScale alone lets these through: at the far edge of
+		// the band the value is still a thousandth of the answer.
+		if snapped == 0 && correct != 0 {
+			continue
+		}
+		out = append(out, fmt.Sprintf(format, snapped))
 	}
 	return out
+}
+
+// percentCandidates is floatCandidates for an answer that is a percentage of a
+// whole, where anything above 100% is impossible rather than merely wrong.
+// The inverted-ratio mistake always overshoots 100, so it cannot be taught
+// here — its slot goes to an error that produces a believable percentage.
+func percentCandidates(correct float64, format string, values []float64) []string {
+	kept := make([]float64, 0, len(values))
+	for _, v := range values {
+		if v > 0 && v <= 100 {
+			kept = append(kept, v)
+		}
+	}
+	return floatCandidates(correct, format, kept)
 }
 
 // floatTopUp yields fallback distractors in two tiers. First proportional
@@ -232,3 +254,32 @@ func sciTopUp(correct float64) func(int) string {
 		return formatSci(correct * f)
 	}
 }
+
+// ─── Text answers ────────────────────────────────────────────────
+
+// Some topics answer from a closed vocabulary — the four bonding classes, the
+// VSEPR shapes, the organic classes — where the only honest wrong answers are
+// the other real entries. There is no ladder to climb: a fabricated label
+// would be eliminable on sight and would teach a word that does not exist.
+
+// textCandidates returns every pool entry other than the answer, ordered by s
+// so the same distractors do not lead every time. The pool must hold at least
+// four distinct entries, or the problem fails validation and is retried.
+func textCandidates(s *Source, correct string, pool []string) []string {
+	out := make([]string, 0, len(pool))
+	seen := map[string]bool{correct: true}
+	for _, v := range pool {
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	s.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
+	return out
+}
+
+// noTopUp is the top-up for closed-vocabulary answers: there is nothing to
+// fall back to, so it yields nothing and lets validation catch a pool too
+// small to fill four slots.
+func noTopUp(int) string { return "" }

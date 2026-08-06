@@ -8,15 +8,16 @@ A fast-paced chemistry practice game — like [fastmath.io](https://fastmath.io)
 - **Backend:** Go (Gin framework)
 - **Communication:** REST API (JSON)
 
-## Features (MVP)
+## Features
 
-- Single Player Mode (Easy difficulty)
-- Auto-generated questions:
-  - **Atomic Structure** — protons, neutrons, electrons
-  - **Oxidation Numbers** — common compounds
-- Configurable timer (30s – 180s)
-- Score tracking (+10 per correct answer)
-- No authentication required
+- **Single player** — pick the question count, a difficulty, or your own set of
+  topics grouped by curriculum chapter
+- **Ranked 1v1** — matchmaking by ELO over a seeded question set, so both
+  players answer the same questions in the same order
+- **Custom rooms** — code-based lobbies
+- Auto-generated questions across 23 topics (see [Question coverage](#question-coverage))
+- Per-difficulty timers and scoring, with a combo multiplier for answer streaks
+- Casual play needs no account; leaderboards and ranked require one
 
 ## Project Structure
 
@@ -76,34 +77,118 @@ Frontend runs on `http://localhost:3000`.
 
 ### API Endpoints
 
-| Method | Endpoint         | Description              |
-|--------|------------------|--------------------------|
-| GET    | `/api/question`  | Get a random question    |
-| POST   | `/api/validate`  | Validate an answer       |
-| GET    | `/api/health`    | Health check             |
+Everything below sits under `/api` behind an IP rate limiter (burst 30,
+refilling 10/s). Rows marked ✔ need an `Authorization: Bearer <token>` header;
+the two WebSocket routes take the same token as a `?token=` query parameter,
+since a browser cannot set headers on a WebSocket handshake.
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET  | `/api/question` | — | Generate a question. `?difficulty=easy\|medium\|hard`, or `?categories=<csv>` to draw from chosen topics |
+| POST | `/api/answer` | — | Submit `questionId` + `selectedIndex`; the server times the answer, marks it, and returns the score along with the correct index |
+| POST | `/api/validate` | — | Legacy self-scoring check — the caller supplies the answer it wants compared. Nothing in the app calls it |
+| GET  | `/api/health` | — | Health check |
+| POST | `/api/auth/register` | — | Create an account |
+| POST | `/api/auth/login` | — | Exchange credentials for a JWT |
+| GET  | `/api/auth/me` | ✔ | The current user |
+| GET  | `/api/leaderboard` | — | Top scores |
+| GET  | `/api/profile/:username` | — | Public profile and score history (`?page=`) |
+| POST | `/api/scores` | ✔ | Record a finished single-player run |
+| GET  | `/api/scores/me` | ✔ | Your own score history |
+| POST | `/api/match/start` | ✔ | Start a server-tracked match |
+| POST | `/api/match/answer` | ✔ | Answer inside a match — additionally limited to burst 3, refilling 1/s |
+| POST | `/api/match/end` | ✔ | Finish a match and persist the result |
+| GET  | `/api/ranked/ws` | `?token=` | WebSocket: matchmaking and live ranked play |
+| GET  | `/api/ranked/stats` | ✔ | Your ELO, wins and losses |
+| GET  | `/api/ranked/history` | ✔ | Your past ranked matches |
+| GET  | `/api/ranked/leaderboard` | — | Ranked ladder |
+| GET  | `/api/room/ws` | `?token=` | WebSocket: custom rooms, `?action=create` or `?action=join&code=<code>` |
+
+Any path that does not start with `/api/` falls through to the Next.js static
+export in `frontend/out/`.
 
 ### Question Response
 
 ```json
 {
   "id": "uuid",
-  "question": "How many protons does Carbon have?",
+  "question": "ธาตุ คาร์บอน (C) มีจำนวนโปรตอนเท่าใด?",
   "choices": ["4", "6", "8", "5"],
-  "correctIndex": 1,
-  "timeLimit": 15,
+  "timeLimit": 30,
   "category": "atomic_structure",
   "difficulty": "easy"
 }
 ```
 
+No `correctIndex`: the server keeps the answer, keyed by question id, and
+returns it from `POST /api/answer` together with the marking and the score.
+So the client can highlight the right choice afterwards, but cannot read it
+out of the network tab beforehand.
+
+## Question coverage
+
+Questions are generated, not stored, from 23 topics spanning บทที่ 2–13 of
+สาระเคมี in หลักสูตรแกนกลางการศึกษาขั้นพื้นฐาน พ.ศ. 2551 (ฉบับปรับปรุง พ.ศ. 2560)
+— the curriculum Thai ม.4–ม.6 chemistry is taught from:
+
+| Chapter | Topics |
+|---|---|
+| บทที่ 2 อะตอมและสมบัติของธาตุ | โครงสร้างอะตอม, การจัดเรียงอิเล็กตรอน |
+| บทที่ 3 พันธะเคมี | ชนิดพันธะเคมี, รูปร่างโมเลกุล (VSEPR) |
+| บทที่ 4 โมลและสูตรเคมี | โมลคอนเซ็ปต์, มวลต่อโมล, ร้อยละโดยมวล |
+| บทที่ 5 สารละลาย | ความเข้มข้น, การเจือจาง, เตรียมสารละลาย, จุดเยือกแข็ง |
+| บทที่ 6 ปริมาณสัมพันธ์ | ปริมาณสัมพันธ์, สารกำหนดปริมาณและร้อยละผลได้ |
+| บทที่ 7 แก๊ส | กฎของแก๊ส, แก๊สอุดมคติ (PV = nRT) |
+| บทที่ 8 อัตราการเกิดปฏิกิริยาเคมี | อัตราเฉลี่ยและอันดับของปฏิกิริยา |
+| บทที่ 9 สมดุลเคมี | ค่าคงที่สมดุล K |
+| บทที่ 10 กรด–เบส | pH, pOH, Ka |
+| บทที่ 11 เคมีไฟฟ้า | เลขออกซิเดชัน, E°cell |
+| บทที่ 12 เคมีอินทรีย์ | หมู่ฟังก์ชัน |
+| บทที่ 13 พอลิเมอร์ | มอนอเมอร์, แบบเติม / แบบควบแน่น |
+
+Single player can filter by any of these; ranked draws 4 easy, 3 medium and
+3 hard from the same registry.
+
+## Anti-cheat
+
+The server already withholds the answer, measures answer times itself, and
+scores every mode server-side. On top of that, `backend/internal/anticheat`
+watches for answer patterns a human cannot produce:
+
+| Rule | Fires on |
+|---|---|
+| `impossible_speed` | A correct answer returned faster than the question can be read — per-difficulty floor, 1.0s easy to 2.0s hard |
+| `fast_streak` | 5 correct answers in a row, each under 3s — fast on every question, including the hard ones |
+| `uniform_timing` | 6 answers with under 0.2s of spread — machine cadence rather than a person |
+
+**Everything ships in observe mode.** Rules record findings to the log and
+change nothing a player sees. Enforcement is per-rule, stored in the
+`anticheat_rules` table, and reloaded every 30 seconds — so escalating is an
+`UPDATE`, not a deploy:
+
+```sql
+-- reject flagged answers (they score zero) instead of just logging them
+UPDATE anticheat_rules SET action = 'reject' WHERE name = 'impossible_speed';
+
+-- retune a threshold; params merge over the defaults
+UPDATE anticheat_rules SET params = '{"window": 8}' WHERE name = 'fast_streak';
+
+-- turn a rule off entirely
+UPDATE anticheat_rules SET enabled = 0 WHERE name = 'uniform_timing';
+```
+
+Adding a rule means implementing `Detector`, registering it, and giving it a
+default row — see `backend/internal/anticheat/AGENTS.md`. Findings currently
+go to the structured log through a `Sink` interface; persisting them to a table
+is one more `Sink`, with no change to any detector or call site.
+
 ## Extending
 
-The codebase is designed for extension:
-
-- **Medium/Hard modes** — add new generator methods in `services/generator.go`
-- **New question types** — add new compound/element data files
-- **PVP mode** — WebSocket support can be added to the Gin server
-- **Authentication** — add middleware to Gin router
+- **New question types** — implement `Topic` in `backend/internal/services/topics_*.go`,
+  append it to `topicRegistry`, and add its id to `frontend/src/data/categories.ts`.
+  See `backend/internal/services/AGENTS.md` for the full contract.
+- **New reference data** — add a data file next to `elements.go`; topics read
+  data, they never embed it.
 
 ## Docker: Build & Run with Persistent DB
 

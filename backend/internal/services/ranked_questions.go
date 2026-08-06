@@ -9,11 +9,13 @@ type RankedQuestionSet struct {
 	Questions []RankedQuestion
 }
 
-// RankedQuestion is a single question with its metadata.
+// RankedQuestion is a single question with its metadata. Like models.Question,
+// it keeps the answer off the wire — matches send models.QuestionStartPayload,
+// and the answer is revealed in the ANSWER_RESULT that follows.
 type RankedQuestion struct {
 	Question     string   `json:"question"`
 	Choices      []string `json:"choices"`
-	CorrectIndex int      `json:"correctIndex"`
+	CorrectIndex int      `json:"-"`
 	TimeLimit    int      `json:"timeLimit"`
 	Category     string   `json:"category"`
 	Difficulty   string   `json:"difficulty"`

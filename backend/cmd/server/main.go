@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/takumi/fastchem/internal/anticheat"
 	"github.com/takumi/fastchem/internal/config"
 	"github.com/takumi/fastchem/internal/database"
 	"github.com/takumi/fastchem/internal/handlers"
@@ -29,6 +30,35 @@ func main() {
 	// Initialize database
 	database.Init(cfg.DBPath)
 	defer database.Close()
+
+	// Anti-cheat. Rules live in the anticheat_rules table so thresholds can be
+	// retuned with an UPDATE; the reload ticker below picks the change up
+	// without a restart. Everything ships as "observe", so nothing is blocked
+	// until an operator sets a rule's action to "reject".
+	acSettings := anticheat.NewStore(database.DB)
+	if err := acSettings.Seed(context.Background()); err != nil {
+		slog.Error("anticheat: seeding rules failed, running on defaults", "error", err)
+	}
+	if err := acSettings.Reload(context.Background()); err != nil {
+		slog.Error("anticheat: loading rules failed, running on defaults", "error", err)
+	}
+	anticheat.Init(anticheat.NewEngine(acSettings, anticheat.SlogSink{}))
+	for _, r := range acSettings.Snapshot() {
+		slog.Info("anticheat rule", "name", r.Name, "enabled", r.Enabled, "action", string(r.Action), "params", r.Params)
+	}
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := acSettings.Reload(context.Background()); err != nil {
+				slog.Error("anticheat: reloading rules failed, keeping current", "error", err)
+			}
+			// Answer history exists to spot patterns across one sitting; a
+			// subject idle for 30 minutes is a new sitting.
+			anticheat.Sweep(30 * time.Minute)
+		}
+	}()
 
 	// Periodically clean up expired questions from the in-memory store
 	go func() {

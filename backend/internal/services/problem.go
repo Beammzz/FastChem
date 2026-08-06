@@ -118,6 +118,25 @@ var topicRegistry = []Topic{
 	dilutionTopic{},
 	preparingSolutionTopic{},
 	freezingPointTopic{},
+	// สาระเคมี, หลักสูตรแกนกลาง 2551 ฉบับปรับปรุง 2560 — appended in chapter
+	// order, which is also registry order because appending is the only way a
+	// topic may enter this list.
+	electronConfigTopic{},     // บทที่ 2 อะตอมและสมบัติของธาตุ
+	bondTypeTopic{},           // บทที่ 3 พันธะเคมี
+	molecularShapeTopic{},     // บทที่ 3 พันธะเคมี — VSEPR
+	molarMassTopic{},          // บทที่ 4 โมลและสูตรเคมี
+	percentCompositionTopic{}, // บทที่ 4 โมลและสูตรเคมี
+	concentrationTopic{},      // บทที่ 5 สารละลาย
+	stoichiometryTopic{},      // บทที่ 6 ปริมาณสัมพันธ์
+	limitingReagentTopic{},    // บทที่ 6 ปริมาณสัมพันธ์ — สารกำหนดปริมาณ, ร้อยละผลได้
+	gasLawTopic{},             // บทที่ 7 แก๊ส
+	idealGasTopic{},           // บทที่ 7 แก๊ส — PV = nRT
+	reactionRateTopic{},       // บทที่ 8 อัตราการเกิดปฏิกิริยาเคมี
+	equilibriumTopic{},        // บทที่ 9 สมดุลเคมี
+	acidBaseTopic{},           // บทที่ 10 กรด–เบส
+	electrochemistryTopic{},   // บทที่ 11 เคมีไฟฟ้า
+	functionalGroupTopic{},    // บทที่ 12 เคมีอินทรีย์
+	polymerTopic{},            // บทที่ 13 พอลิเมอร์
 }
 
 // topicsForDifficulty returns the topics at a difficulty, in registry order.

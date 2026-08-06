@@ -4,6 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import {
+  CATEGORIES,
+  CHAPTERS,
+  categoriesForChapter,
+} from "@/data/categories";
 
 const QUESTION_COUNT_OPTIONS = [
   { label: "5 ข้อ", value: 5 },
@@ -17,19 +22,19 @@ const DIFFICULTY_OPTIONS = [
   {
     label: "ง่าย",
     value: "easy",
-    desc: "โครงสร้างอะตอม, ออกซิเดชัน & สถานะของสาร",
+    desc: "อะตอม, พันธะเคมี, สถานะของสาร, เคมีอินทรีย์, พอลิเมอร์",
     color: "violet",
   },
   {
     label: "ปานกลาง",
     value: "medium",
-    desc: "โมลคอนเซ็ปต์ (มวล↔โมล↔อนุภาค)",
+    desc: "โมลและสูตรเคมี, สารละลาย, ปริมาณสัมพันธ์, กฎของแก๊ส",
     color: "amber",
   },
   {
     label: "ยาก",
     value: "hard",
-    desc: "การเจือจาง, เตรียมสารละลาย, จุดเยือกแข็ง",
+    desc: "สมดุลเคมี, กรด–เบส, เคมีไฟฟ้า, อัตราการเกิดปฏิกิริยา",
     color: "red",
   },
   {
@@ -40,57 +45,6 @@ const DIFFICULTY_OPTIONS = [
   },
 ];
 
-const ALL_CATEGORIES = [
-  {
-    id: "atomic_structure",
-    label: "โครงสร้างอะตอม",
-    desc: "โปรตอน, นิวตรอน, อิเล็กตรอน",
-    icon: "⚛️",
-    difficulty: "easy",
-  },
-  {
-    id: "oxidation_number",
-    label: "เลขออกซิเดชัน",
-    desc: "วิเคราะห์สารประกอบ",
-    icon: "🔢",
-    difficulty: "easy",
-  },
-  {
-    id: "state_of_matter",
-    label: "สถานะของสาร",
-    desc: "ของแข็ง / ของเหลว / แก๊ส / สารละลาย (aq)",
-    icon: "🧊",
-    difficulty: "easy",
-  },
-  {
-    id: "mole_concept",
-    label: "โมลคอนเซ็ปต์",
-    desc: "มวล↔โมล↔อนุภาค",
-    icon: "⚖️",
-    difficulty: "medium",
-  },
-  {
-    id: "dilution",
-    label: "การเจือจาง",
-    desc: "M₁V₁ = M₂V₂",
-    icon: "🧪",
-    difficulty: "hard",
-  },
-  {
-    id: "preparing_solution",
-    label: "เตรียมสารละลาย",
-    desc: "mass = M × V × MW",
-    icon: "🧂",
-    difficulty: "hard",
-  },
-  {
-    id: "freezing_point",
-    label: "จุดเยือกแข็ง",
-    desc: "ΔTf = iKfm",
-    icon: "❄️",
-    difficulty: "hard",
-  },
-];
 
 export default function SinglePlayerPage() {
   const [selectedQuestions, setSelectedQuestions] = useState(10);
@@ -107,8 +61,19 @@ export default function SinglePlayerPage() {
     );
   };
 
+  // Selecting a chapter picks up every topic in it; a second press clears them,
+  // which is how a student narrows the set down to one chapter to revise.
+  const toggleChapter = (chapter: string) => {
+    const ids = categoriesForChapter(chapter).map((c) => c.id);
+    setSelectedCategories((prev) =>
+      ids.every((id) => prev.includes(id))
+        ? prev.filter((id) => !ids.includes(id))
+        : Array.from(new Set([...prev, ...ids]))
+    );
+  };
+
   const selectAll = () => {
-    setSelectedCategories(ALL_CATEGORIES.map((c) => c.id));
+    setSelectedCategories(CATEGORIES.map((c) => c.id));
   };
 
   const deselectAll = () => {
@@ -270,61 +235,86 @@ export default function SinglePlayerPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-2">
-                {ALL_CATEGORIES.map((cat) => {
-                  const isSelected = selectedCategories.includes(cat.id);
-                  const diffColor =
-                    cat.difficulty === "easy"
-                      ? "text-violet-400"
-                      : cat.difficulty === "medium"
-                      ? "text-amber-400"
-                      : "text-red-400";
-                  const diffLabel =
-                    cat.difficulty === "easy"
-                      ? "ง่าย"
-                      : cat.difficulty === "medium"
-                      ? "ปานกลาง"
-                      : "ยาก";
+              {/* Grouped by IPST chapter, so a student revising one chapter
+                  can pick its topics without hunting through 23 rows. */}
+              <div className="space-y-4">
+                {CHAPTERS.map((chapter) => {
+                  const chapterCategories = categoriesForChapter(chapter);
+                  const allPicked = chapterCategories.every((c) =>
+                    selectedCategories.includes(c.id)
+                  );
                   return (
-                    <button
-                      key={cat.id}
-                      onClick={() => toggleCategory(cat.id)}
-                      className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
-                        isSelected
-                          ? "bg-violet-500/10 border-violet-500/30"
-                          : "bg-white/[0.02] border-white/5 hover:border-white/10"
-                      }`}
-                    >
-                      <span
-                        className={`w-5 h-5 rounded flex items-center justify-center text-xs border transition-all ${
-                          isSelected
-                            ? "bg-violet-500 border-violet-500 text-white"
-                            : "border-white/20 text-transparent"
-                        }`}
-                      >
-                        ✓
-                      </span>
-                      <span className="text-lg">{cat.icon}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`text-sm font-medium ${
-                              isSelected ? "text-white" : "text-gray-300"
-                            }`}
-                          >
-                            {cat.label}
-                          </span>
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded-full ${diffColor} bg-white/5`}
-                          >
-                            {diffLabel}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500 truncate">
-                          {cat.desc}
+                    <div key={chapter}>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[11px] text-gray-500 font-medium">
+                          {chapter}
                         </p>
+                        <button
+                          onClick={() => toggleChapter(chapter)}
+                          className="text-[11px] text-violet-400/80 hover:text-violet-300 transition-colors"
+                        >
+                          {allPicked ? "เอาออก" : "เลือกทั้งบท"}
+                        </button>
                       </div>
-                    </button>
+                      <div className="grid grid-cols-1 gap-2">
+                        {chapterCategories.map((cat) => {
+                          const isSelected = selectedCategories.includes(cat.id);
+                          const diffColor =
+                            cat.difficulty === "easy"
+                              ? "text-violet-400"
+                              : cat.difficulty === "medium"
+                              ? "text-amber-400"
+                              : "text-red-400";
+                          const diffLabel =
+                            cat.difficulty === "easy"
+                              ? "ง่าย"
+                              : cat.difficulty === "medium"
+                              ? "ปานกลาง"
+                              : "ยาก";
+                          return (
+                            <button
+                              key={cat.id}
+                              onClick={() => toggleCategory(cat.id)}
+                              className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                                isSelected
+                                  ? "bg-violet-500/10 border-violet-500/30"
+                                  : "bg-white/[0.02] border-white/5 hover:border-white/10"
+                              }`}
+                            >
+                              <span
+                                className={`w-5 h-5 rounded flex items-center justify-center text-xs border transition-all ${
+                                  isSelected
+                                    ? "bg-violet-500 border-violet-500 text-white"
+                                    : "border-white/20 text-transparent"
+                                }`}
+                              >
+                                ✓
+                              </span>
+                              <span className="text-lg">{cat.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`text-sm font-medium ${
+                                      isSelected ? "text-white" : "text-gray-300"
+                                    }`}
+                                  >
+                                    {cat.label}
+                                  </span>
+                                  <span
+                                    className={`text-[10px] px-1.5 py-0.5 rounded-full ${diffColor} bg-white/5`}
+                                  >
+                                    {diffLabel}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-500 truncate">
+                                  {cat.desc}
+                                </p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
               </div>

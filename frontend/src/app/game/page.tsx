@@ -43,6 +43,7 @@ function GameContent() {
     totalQuestions: numQuestions,
     selectedIndex,
     isCorrect,
+    revealedIndex,
     loading,
     combo,
     bestCombo,
@@ -173,6 +174,7 @@ function GameContent() {
               question={question}
               selectedIndex={selectedIndex}
               isCorrect={isCorrect}
+              revealedIndex={revealedIndex}
               scoreEarned={lastScoreEarned}
               speedBonus={lastSpeedBonus}
               comboMultiplier={lastComboMultiplier}

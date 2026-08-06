@@ -1,7 +1,9 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -202,6 +204,11 @@ func TestTopicCategoriesMatchFrontendIDs(t *testing.T) {
 	want := []string{
 		"atomic_structure", "oxidation_number", "state_of_matter",
 		"mole_concept", "dilution", "preparing_solution", "freezing_point",
+		"electron_config", "bond_type", "molecular_shape",
+		"molar_mass", "percent_composition", "concentration",
+		"stoichiometry", "limiting_reagent", "gas_law", "ideal_gas",
+		"reaction_rate", "equilibrium", "acid_base", "electrochemistry",
+		"functional_group", "polymer",
 	}
 	for _, category := range want {
 		if _, ok := topicForCategory(category); !ok {
@@ -210,6 +217,27 @@ func TestTopicCategoriesMatchFrontendIDs(t *testing.T) {
 	}
 	if len(topicRegistry) != len(want) {
 		t.Errorf("registry has %d topics, expected %d", len(topicRegistry), len(want))
+	}
+}
+
+// Every topic must be reachable through the difficulty filter as well as the
+// category filter — a topic whose Difficulty() is a typo would be registered,
+// pass every other test, and never be served.
+func TestEveryTopicIsReachableByDifficulty(t *testing.T) {
+	seen := map[string]bool{}
+	for _, difficulty := range []string{"easy", "medium", "hard"} {
+		for _, topic := range topicsForDifficulty(difficulty) {
+			if topic.Difficulty() != difficulty {
+				t.Errorf("%s appeared under difficulty %q", topic.Category(), difficulty)
+			}
+			seen[topic.Category()] = true
+		}
+	}
+	for _, topic := range topicRegistry {
+		if !seen[topic.Category()] {
+			t.Errorf("%s has difficulty %q, which no filter selects",
+				topic.Category(), topic.Difficulty())
+		}
 	}
 }
 
@@ -318,6 +346,212 @@ func TestParticleCountsAreNonNegative(t *testing.T) {
 	}
 }
 
+// A missing key in atomicMasses reads as 0.0 rather than failing, which would
+// quietly under-count a molar mass and take the answer and every distractor
+// down with it.
+func TestEveryFormulaSymbolHasAnAtomicMass(t *testing.T) {
+	for _, c := range formulaCompounds {
+		for _, p := range c.Parts {
+			if _, ok := atomicMasses[p.Symbol]; !ok {
+				t.Errorf("%s: no atomic mass for %q", c.Formula, p.Symbol)
+			}
+			if p.Count < 1 {
+				t.Errorf("%s: subscript %d on %s", c.Formula, p.Count, p.Symbol)
+			}
+		}
+	}
+}
+
+// Spot-check the derived molar masses against the values the IPST book prints.
+func TestFormulaMolarMassesAreCorrect(t *testing.T) {
+	want := map[string]float64{
+		"H₂O":       18.02,
+		"CO₂":       44.01,
+		"NaCl":      58.44,
+		"CaCO₃":     100.09,
+		"H₂SO₄":     98.09,
+		"NH₃":       17.03,
+		"C₆H₁₂O₆":   180.16,
+		"KMnO₄":     158.04,
+		"K₂Cr₂O₇":   294.20,
+		"(NH₄)₂SO₄": 132.15,
+	}
+	found := 0
+	for _, c := range formulaCompounds {
+		expected, ok := want[c.Formula]
+		if !ok {
+			continue
+		}
+		found++
+		if math.Abs(c.MolarMass()-expected) > 0.02 {
+			t.Errorf("%s: molar mass %.3f, want %.2f", c.Formula, c.MolarMass(), expected)
+		}
+	}
+	if found != len(want) {
+		t.Errorf("checked %d of %d reference compounds; the table was renamed or trimmed", found, len(want))
+	}
+}
+
+// A stoichiometry question is only meaningful if the equation it quotes is
+// balanced. Mass balance catches both a wrong coefficient and a wrong molar
+// mass, which is exactly what would make the "correct" answer wrong.
+func TestReactionsConserveMass(t *testing.T) {
+	side := func(species []reactionSpecies) float64 {
+		total := 0.0
+		for _, sp := range species {
+			total += float64(sp.Coef) * sp.MolarMass
+		}
+		return total
+	}
+	for _, r := range reactions {
+		in, out := side(r.Reactants), side(r.Products)
+		// The tolerance absorbs rounding in the tabulated molar masses only;
+		// a missing or wrong coefficient moves the total by grams, not
+		// hundredths.
+		if math.Abs(in-out) > 0.05 {
+			t.Errorf("%s: %.2f g on the left, %.2f g on the right", r.Equation, in, out)
+		}
+		if len(r.Reactants) == 0 || len(r.Products) == 0 {
+			t.Errorf("%s: one side is empty", r.Equation)
+		}
+	}
+}
+
+// Closed-vocabulary topics have no ladder to fall back on: if a pool holds
+// fewer than four distinct entries, the topic cannot fill four choices and
+// every problem it makes fails validation.
+func TestClosedVocabularyPoolsCanFillFourChoices(t *testing.T) {
+	pools := map[string][]string{
+		"bondClasses":          bondClasses,
+		"molecularShapes":      molecularShapes,
+		"organicClasses":       organicClasses,
+		"functionalGroups":     functionalGroups,
+		"representativeGroups": representativeGroups,
+	}
+	for name, pool := range pools {
+		distinct := map[string]bool{}
+		for _, v := range pool {
+			if v == "" {
+				t.Errorf("%s contains an empty entry", name)
+			}
+			distinct[v] = true
+		}
+		if len(distinct) < 4 {
+			t.Errorf("%s has %d distinct entries, need at least 4", name, len(distinct))
+		}
+	}
+
+	// The polymer route question draws its distractors from the other route,
+	// so each route needs three polymers of its own plus the answer.
+	routes := map[string]int{}
+	monomers := map[string]string{}
+	for _, p := range polymers {
+		routes[p.Route]++
+		if prev, ok := monomers[p.Monomer]; ok {
+			t.Errorf("monomer %q maps to both %s and %s; the question has two right answers",
+				p.Monomer, prev, p.NameTH)
+		}
+		monomers[p.Monomer] = p.NameTH
+	}
+	for route, n := range routes {
+		if n < 4 {
+			t.Errorf("route %q has %d polymers, need at least 4", route, n)
+		}
+	}
+
+	// Every substance and molecule must classify into the vocabulary its
+	// question answers from.
+	known := func(pool []string, v string) bool {
+		for _, entry := range pool {
+			if entry == v {
+				return true
+			}
+		}
+		return false
+	}
+	for _, sub := range bondSubstances {
+		if !known(bondClasses, sub.Class) {
+			t.Errorf("%s has class %q, which is not in bondClasses", sub.Formula, sub.Class)
+		}
+	}
+	for _, mol := range shapeMolecules {
+		if !known(molecularShapes, mol.Shape) {
+			t.Errorf("%s has shape %q, which is not in molecularShapes", mol.Formula, mol.Shape)
+		}
+	}
+	for _, c := range organicCompounds {
+		if !known(organicClasses, c.Class) {
+			t.Errorf("%s has class %q, which is not in organicClasses", c.Formula, c.Class)
+		}
+		if !known(functionalGroups, c.Group) {
+			t.Errorf("%s has group %q, which is not in functionalGroups", c.Formula, c.Group)
+		}
+	}
+}
+
+// Shell configurations must add up to the atomic number, and no level may hold
+// more electrons than it can.
+func TestShellConfigurationsAreConsistent(t *testing.T) {
+	capacities := []int{2, 8, 18, 32}
+	for _, e := range shellElements {
+		total := 0
+		for i, n := range e.Shells {
+			total += n
+			if i < len(capacities) && n > capacities[i] {
+				t.Errorf("%s: level %d holds %d electrons, capacity %d", e.Symbol, i+1, n, capacities[i])
+			}
+		}
+		if total != e.Number {
+			t.Errorf("%s: shells sum to %d, atomic number is %d", e.Symbol, total, e.Number)
+		}
+		if e.Period != len(e.Shells) {
+			t.Errorf("%s: period %d but %d occupied levels", e.Symbol, e.Period, len(e.Shells))
+		}
+	}
+}
+
+// A galvanic cell runs the higher reduction potential as the cathode, so a
+// standard cell potential is never negative.
+func TestCellPotentialsAreNonNegative(t *testing.T) {
+	topic := electrochemistryTopic{}
+	s := NewSeededSource(13)
+	checked := 0
+	for i := 0; i < 5000; i++ {
+		p := topic.Generate(s)
+		if !strings.Contains(p.Question, "E°cell") {
+			continue
+		}
+		var v float64
+		if _, err := fmt.Sscanf(p.Choices[p.CorrectIndex], "%f", &v); err != nil {
+			t.Fatalf("unparseable cell potential %q", p.Choices[p.CorrectIndex])
+		}
+		if v < 0 {
+			t.Errorf("negative E°cell %.2f in %q", v, p.Question)
+		}
+		checked++
+	}
+	if checked == 0 {
+		t.Fatal("no cell-potential questions were generated, test proved nothing")
+	}
+}
+
+// pH questions must land in the range the scale actually covers; a pH of 20 or
+// −3 means a sign or a logarithm went the wrong way.
+func TestAcidBaseAnswersStayOnTheScale(t *testing.T) {
+	topic := acidBaseTopic{}
+	s := NewSeededSource(17)
+	for i := 0; i < 5000; i++ {
+		p := topic.Generate(s)
+		var v float64
+		if _, err := fmt.Sscanf(p.Choices[p.CorrectIndex], "%f", &v); err != nil {
+			t.Fatalf("unparseable pH %q", p.Choices[p.CorrectIndex])
+		}
+		if v < 0 || v > 14 {
+			t.Errorf("pH %.2f outside [0,14] in %q", v, p.Question)
+		}
+	}
+}
+
 // ─── Concurrency ────────────────────────────────────────────────
 
 // The casual generator holds one Source for the life of the process and Gin
@@ -336,4 +570,19 @@ func TestConcurrentGenerationIsRaceFree(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// ─── The answer stays server-side ───────────────────────────────
+
+// Ranked play sends models.QuestionStartPayload, not this struct, but a
+// serializable answer field is one careless handler away from going out.
+func TestRankedQuestionJSONOmitsTheAnswer(t *testing.T) {
+	set := GenerateRankedQuestions(7)
+	encoded, err := json.Marshal(set.Questions[0])
+	if err != nil {
+		t.Fatalf("marshal ranked question: %v", err)
+	}
+	if strings.Contains(string(encoded), "correctIndex") {
+		t.Fatalf("ranked question JSON leaks the answer: %s", encoded)
+	}
 }

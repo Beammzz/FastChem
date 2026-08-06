@@ -44,6 +44,7 @@ Tests currently cover `internal/services` question generation only; other packag
 
 ## Child DOX Index
 
+- `internal/anticheat/AGENTS.md` — answer-pattern detection, tunable rules, findings
 - `internal/database/AGENTS.md` — SQLite connection, schema, migrations
 - `internal/middleware/AGENTS.md` — JWT auth, rate limiting, request IDs
 - `internal/models/AGENTS.md` — structs, JSON contract, WebSocket protocol constants
