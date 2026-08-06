@@ -7,6 +7,12 @@ interface QuestionCardProps {
   question: Question;
   selectedIndex: number | null;
   isCorrect: boolean | null;
+  /**
+   * The right answer, which arrives with the server's marking rather than with
+   * the question. Null while the question is still open, and also when the
+   * submit failed and the answer stayed unknown.
+   */
+  revealedIndex: number | null;
   scoreEarned: number;
   speedBonus: number;
   comboMultiplier?: number;
@@ -17,6 +23,7 @@ export default function QuestionCard({
   question,
   selectedIndex,
   isCorrect,
+  revealedIndex,
   scoreEarned,
   speedBonus,
   comboMultiplier = 1,
@@ -26,10 +33,10 @@ export default function QuestionCard({
     if (selectedIndex === null) {
       return "bg-[#12122a] border-white/5 hover:border-violet-500/40 hover:bg-violet-500/5 text-white cursor-pointer";
     }
-    if (index === question.correctIndex) {
+    if (index === revealedIndex) {
       return "bg-violet-500/10 border-violet-500/50 text-violet-300";
     }
-    if (index === selectedIndex && !isCorrect) {
+    if (index === selectedIndex && isCorrect === false) {
       return "bg-red-500/10 border-red-500/50 text-red-300";
     }
     return "bg-[#12122a] border-white/5 text-gray-600";
@@ -37,8 +44,8 @@ export default function QuestionCard({
 
   const getChoicePrefix = (index: number) => {
     if (selectedIndex === null) return "";
-    if (index === question.correctIndex) return "✓ ";
-    if (index === selectedIndex && !isCorrect) return "✗ ";
+    if (index === revealedIndex) return "✓ ";
+    if (index === selectedIndex && isCorrect === false) return "✗ ";
     return "";
   };
 
@@ -89,10 +96,18 @@ export default function QuestionCard({
       {selectedIndex !== null && (
         <div
           className={`mt-5 text-center animate-fade-in ${
-            isCorrect ? "text-violet-400" : "text-red-400"
+            isCorrect === null
+              ? "text-gray-400"
+              : isCorrect
+              ? "text-violet-400"
+              : "text-red-400"
           }`}
         >
-          {selectedIndex === -1 ? (
+          {isCorrect === null ? (
+            <div className="text-base font-bold">
+              ⚠️ ตรวจคำตอบไม่สำเร็จ — ข้อนี้ไม่ถูกนับคะแนน
+            </div>
+          ) : selectedIndex === -1 ? (
             <div className="text-base font-bold">⏰ หมดเวลา!</div>
           ) : isCorrect ? (
             <div>

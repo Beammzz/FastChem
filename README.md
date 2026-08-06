@@ -85,8 +85,8 @@ since a browser cannot set headers on a WebSocket handshake.
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
 | GET  | `/api/question` | — | Generate a question. `?difficulty=easy\|medium\|hard`, or `?categories=<csv>` to draw from chosen topics |
-| POST | `/api/answer` | — | Submit `questionId` + `selectedIndex`; the server times the answer, marks it and returns the score |
-| POST | `/api/validate` | — | Legacy answer check, kept for older clients |
+| POST | `/api/answer` | — | Submit `questionId` + `selectedIndex`; the server times the answer, marks it, and returns the score along with the correct index |
+| POST | `/api/validate` | — | Legacy self-scoring check — the caller supplies the answer it wants compared. Nothing in the app calls it |
 | GET  | `/api/health` | — | Health check |
 | POST | `/api/auth/register` | — | Create an account |
 | POST | `/api/auth/login` | — | Exchange credentials for a JWT |
@@ -114,12 +114,16 @@ export in `frontend/out/`.
   "id": "uuid",
   "question": "ธาตุ คาร์บอน (C) มีจำนวนโปรตอนเท่าใด?",
   "choices": ["4", "6", "8", "5"],
-  "correctIndex": 1,
   "timeLimit": 30,
   "category": "atomic_structure",
   "difficulty": "easy"
 }
 ```
+
+No `correctIndex`: the server keeps the answer, keyed by question id, and
+returns it from `POST /api/answer` together with the marking and the score.
+So the client can highlight the right choice afterwards, but cannot read it
+out of the network tab beforehand.
 
 ## Question coverage
 

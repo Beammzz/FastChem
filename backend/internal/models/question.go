@@ -1,11 +1,16 @@
 package models
 
-// Question represents a generated chemistry question
+// Question represents a generated chemistry question.
+//
+// CorrectIndex is deliberately not serialized: a question is handed to the
+// client before it is answered, so anything on the wire is readable from the
+// network tab. The answer lives in GlobalQuestionStore keyed by ID, and comes
+// back in AnswerResponse once the player has committed to a choice.
 type Question struct {
 	ID           string   `json:"id"`
 	Question     string   `json:"question"`
 	Choices      []string `json:"choices"`
-	CorrectIndex int      `json:"correctIndex"`
+	CorrectIndex int      `json:"-"`
 	TimeLimit    int      `json:"timeLimit"`
 	Category     string   `json:"category"`
 	Difficulty   string   `json:"difficulty"`

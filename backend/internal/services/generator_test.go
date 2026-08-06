@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -569,4 +570,19 @@ func TestConcurrentGenerationIsRaceFree(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// ─── The answer stays server-side ───────────────────────────────
+
+// Ranked play sends models.QuestionStartPayload, not this struct, but a
+// serializable answer field is one careless handler away from going out.
+func TestRankedQuestionJSONOmitsTheAnswer(t *testing.T) {
+	set := GenerateRankedQuestions(7)
+	encoded, err := json.Marshal(set.Questions[0])
+	if err != nil {
+		t.Fatalf("marshal ranked question: %v", err)
+	}
+	if strings.Contains(string(encoded), "correctIndex") {
+		t.Fatalf("ranked question JSON leaks the answer: %s", encoded)
+	}
 }

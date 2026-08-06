@@ -16,6 +16,7 @@ Plain data structs shared by handlers, services, and the database layer. Defines
 
 - **This package is the JSON contract.** Every field carries an explicit camelCase `json:` tag, and `frontend/src/types/index.ts` mirrors these structs. Renaming a field or changing its type is a two-sided change.
 - **Never expose a password hash.** `User.PasswordHash` is tagged `json:"-"`; user-facing responses use `UserPublic`.
+- **Never expose an unanswered question's answer.** `Question.CorrectIndex` is tagged `json:"-"` for the same reason: the struct goes out before the player has chosen, so a serialized answer is readable from the network tab. `AnswerResponse`, `MatchAnswerResponse` and `AnswerResultPayload` carry `correctIndex` because they are sent *after* the answer is in — that is where the reveal belongs. `TestQuestionJSONOmitsTheAnswer` pins both halves.
 - **No logic and no imports from sibling packages.** Models depend only on the standard library, which keeps `services` and `handlers` free to import them without cycles.
 - **Match shape constants live here**, not in services: `DefaultQuestionsPerMatch = 10`, `RankedQuestionsPerMatch = 10`, and the ranked difficulty split `RankedEasyCount = 4`, `RankedMediumCount = 3`, `RankedHardCount = 3`. The counts must sum to `RankedQuestionsPerMatch`.
 - **ELO constants live here:** `DefaultRating = 1200`, `EloKFactor = 24`. `services/rating.go` consumes them; `database` defaults the `rating` column to the same 1200.

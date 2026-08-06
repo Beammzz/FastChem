@@ -16,6 +16,7 @@ Gin HTTP handlers and the WebSocket session loops. Translates requests into serv
 
 ## Local Contracts
 
+- **`GET /api/question` stores the answer, it does not send it.** `GetQuestion` writes `CorrectIndex` into `GlobalQuestionStore` keyed by question ID and serves a payload with the answer stripped; `POST /api/answer` looks it up and returns it alongside the marking. A handler that hands the client the answer up front makes every anti-cheat check downstream decorative.
 - **Handlers do not register routes.** Constructors (`NewQuestionHandler`, `NewRankedHandler`, …) take their dependencies; `cmd/server/main.go` owns the route table.
 - **`match_session.go` is shared by ranked and room play.** Both `ranked.go` and `room.go` drive `HandleMatchSession`; per-mode behavior is injected through the `MatchEndFunc` callback. Fix in-match bugs there once rather than in each caller.
 - **WebSocket auth is by query parameter**, validated with `middleware.ParseToken` inside the handler, because the handshake carries no `Authorization` header.

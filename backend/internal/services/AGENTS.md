@@ -58,7 +58,7 @@ Match state:
 
 ### Scoring and matches
 
-- **The client is never trusted with the answer.** `GlobalQuestionStore` holds `correctIndex` keyed by question ID; `/api/answer` and match endpoints resolve correctness from the store. Stored questions expire — `main.go` sweeps entries older than 10 minutes — so a stale ID is a normal, expected miss, not an error to paper over.
+- **The client is never trusted with the answer, and never told it in advance.** `GlobalQuestionStore` holds `correctIndex` keyed by question ID; `/api/answer` and match endpoints resolve correctness from the store, and the question payload itself omits the answer (`json:"-"` on both `models.Question.CorrectIndex` and `RankedQuestion.CorrectIndex`). It is revealed in the marking response, once the player has committed. Stored questions expire — `main.go` sweeps entries older than 10 minutes — so a stale ID is a normal, expected miss, not an error to paper over.
 - **Scoring is authoritative here.** `CalculateScore` returns base + speed bonus before combo; `CalculateScoreWithCombo` applies it. Per-difficulty parameters live in one map:
 
   | difficulty | time limit | base | speed multiplier |

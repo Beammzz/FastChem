@@ -36,6 +36,8 @@ interface GameHook {
   totalQuestions: number;
   selectedIndex: number | null;
   isCorrect: boolean | null;
+  /** Which choice was right, once the server has told us. Null until then. */
+  revealedIndex: number | null;
   loading: boolean;
   combo: number;
   bestCombo: number;
@@ -65,6 +67,7 @@ export function useGame({
   const [correctAnswers, setCorrectAnswers] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const [revealedIndex, setRevealedIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [combo, setCombo] = useState(0);
   const [bestCombo, setBestCombo] = useState(0);
@@ -94,6 +97,7 @@ export function useGame({
     setLoading(true);
     setSelectedIndex(null);
     setIsCorrect(null);
+    setRevealedIndex(null);
     setLastScoreEarned(0);
     setLastSpeedBonus(0);
     setLastComboMultiplier(1);
@@ -119,6 +123,7 @@ export function useGame({
     setCorrectAnswers(0);
     setSelectedIndex(null);
     setIsCorrect(null);
+    setRevealedIndex(null);
     setCombo(0);
     setBestCombo(0);
     setLastScoreEarned(0);
@@ -174,7 +179,8 @@ export function useGame({
     setTotalAnswered((prev) => prev + 1);
     questionNumberRef.current += 1;
 
-    // Submit timeout to backend
+    // Submit timeout to backend. Its reply is also how we learn which choice
+    // was right — the question itself never carried the answer.
     if (matchIdRef.current) {
       try {
         const result: MatchAnswerResponse = await submitMatchAnswer({
@@ -184,12 +190,17 @@ export function useGame({
         });
         setScore(result.totalScore);
         setCombo(result.combo);
+        setRevealedIndex(result.correctIndex);
       } catch {
         // best-effort
       }
     } else {
       try {
-        await submitAnswer({ questionId: question.id, selectedIndex: -1 });
+        const result = await submitAnswer({
+          questionId: question.id,
+          selectedIndex: -1,
+        });
+        setRevealedIndex(result.correctIndex);
       } catch {
         // best-effort
       }
@@ -222,6 +233,7 @@ export function useGame({
           });
 
           setIsCorrect(result.correct);
+          setRevealedIndex(result.correctIndex);
           triggerHaptic(result.correct ? "correct" : "wrong");
           setScore(result.totalScore);
           setCombo(result.combo);
@@ -234,14 +246,10 @@ export function useGame({
             setCorrectAnswers((prev) => prev + 1);
           }
         } catch {
-          // Fallback to local
-          const correct = index === question.correctIndex;
-          setIsCorrect(correct);
-          triggerHaptic(correct ? "correct" : "wrong");
-          if (correct) {
-            setCorrectAnswers((prev) => prev + 1);
-            setScore((prev) => prev + cfg.baseScore);
-          }
+          // Only the server knows the answer, so a failed submit leaves this
+          // question unresolved rather than guessed at. endMatch reconciles
+          // the score from what the server actually recorded.
+          setIsCorrect(null);
         }
       } else {
         // ─── Legacy (unauthenticated) path ─────────────────
@@ -252,6 +260,7 @@ export function useGame({
           });
 
           setIsCorrect(result.correct);
+          setRevealedIndex(result.correctIndex);
           triggerHaptic(result.correct ? "correct" : "wrong");
 
           if (result.correct) {
@@ -270,27 +279,9 @@ export function useGame({
             setCombo(0);
           }
         } catch {
-          const correct = index === question.correctIndex;
-          setIsCorrect(correct);
-          triggerHaptic(correct ? "correct" : "wrong");
-          if (correct) {
-            const localTimeSpent = questionTimeLimit - timeLeft;
-            const speedBonus = Math.floor(
-              (questionTimeLimit - localTimeSpent) * cfg.multiplier
-            );
-            const earned = cfg.baseScore + speedBonus;
-            setScore((prev) => prev + earned);
-            setCorrectAnswers((prev) => prev + 1);
-            setLastScoreEarned(earned);
-            setLastSpeedBonus(speedBonus);
-            setCombo((prev) => {
-              const newCombo = prev + 1;
-              setBestCombo((best) => Math.max(best, newCombo));
-              return newCombo;
-            });
-          } else {
-            setCombo(0);
-          }
+          // Same as above — without a reply there is nothing to mark against,
+          // and the question passes unscored.
+          setIsCorrect(null);
         }
       }
 
@@ -300,7 +291,7 @@ export function useGame({
         setTimeout(() => loadQuestion(), 800);
       }
     },
-    [question, selectedIndex, totalQuestions, clearTimer, loadQuestion, questionTimeLimit, timeLeft, cfg, finishGame]
+    [question, selectedIndex, totalQuestions, clearTimer, loadQuestion, finishGame]
   );
 
   // Per-question countdown timer
@@ -337,6 +328,7 @@ export function useGame({
     totalQuestions,
     selectedIndex,
     isCorrect,
+    revealedIndex,
     loading,
     combo,
     bestCombo,
