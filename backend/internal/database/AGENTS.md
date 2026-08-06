@@ -14,7 +14,8 @@ Owns the SQLite connection and the entire schema. `db.go` is the only file here.
 - **All schema lives in `migrate()`.** There are no migration files or a version table. Statements are `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`, run in order on every boot, so they must stay idempotent.
 - **Adding a column to an existing table** uses a bare `DB.Exec("ALTER TABLE ... ADD COLUMN ...")` after the main loop, with its error deliberately ignored — the statement fails harmlessly when the column already exists. Keep new column additions in that trailing block, not in the `queries` slice.
 - **Failures in the `queries` loop are fatal** (`slog.Error` + `os.Exit(1)`). Only add a statement there if the server genuinely cannot run without it.
-- **Connection limits are intentional:** `SetMaxOpenConns(2)` / `SetMaxIdleConns(2)`, WAL journal, `_busy_timeout=5000`, `foreign_keys=ON`. SQLite has one writer; raising these reintroduces `SQLITE_BUSY`.
+- **Connection limits are intentional:** `SetMaxOpenConns(2)` / `SetMaxIdleConns(2)`, WAL journal, `busy_timeout(5000)`, `foreign_keys(ON)`. SQLite has one writer; raising these reintroduces `SQLITE_BUSY`.
+- **The driver is `modernc.org/sqlite`** (pure Go, no CGO), registered under the name `sqlite`, not `sqlite3`. Pragmas are passed as `?_pragma=name(value)` in the DSN so they apply to every pooled connection — a `PRAGMA` issued through `DB.Exec` only reaches whichever connection the pool hands out.
 - `Init` creates the parent directory of `dbPath`, which is what makes `DB_PATH=/data/fastchem.db` work against a mounted volume.
 
 ## Tables

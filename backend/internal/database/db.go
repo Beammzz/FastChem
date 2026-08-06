@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 var DB *sql.DB
@@ -28,15 +28,12 @@ func Init(dbPath string) {
 	}
 
 	var err error
-	DB, err = sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	// Pragmas go in the DSN so they apply to every pooled connection.
+	DB, err = sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)")
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
 		os.Exit(1)
 	}
-
-	// Enable WAL mode and foreign keys
-	DB.Exec("PRAGMA journal_mode=WAL")
-	DB.Exec("PRAGMA foreign_keys=ON")
 
 	// SQLite only supports a single writer. Limit open connections to avoid
 	// SQLITE_BUSY errors under concurrent writes.

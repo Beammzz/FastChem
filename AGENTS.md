@@ -90,15 +90,16 @@ FastChem is a fast-paced chemistry practice game: timed multiple-choice question
 Root-owned files:
 
 - `README.md` — user-facing setup, API summary, Docker instructions
-- `Dockerfile` — 3-stage build (frontend export → Go build with CGO → debian-slim runtime)
+- `Dockerfile` — 3-stage build (frontend export → CGO-free Go build → debian-slim runtime)
 - `docker-compose.yml` — single `fastchem` service, `fastchem-data` volume at `/data`
-- `run.sh` — local dev: builds the frontend, then runs the backend with `FRONTEND_DIR` set
+- `run.sh` — local dev on Unix shells: builds the frontend, then runs the backend with `FRONTEND_DIR` set
+- `run.ps1` — the same dev flow for Windows PowerShell; keep the two in step when either changes
 - `.dockerignore`, `.gitignore`
 - `AGENTS.md` (this DOX rail) and `CLAUDE.md`
 
 ## Local Contracts
 
-- **One origin in production.** The Go server serves both `/api/*` and the static export, so the frontend calls the API with a relative base URL by default. Do not introduce a second runtime host without updating `Dockerfile`, `docker-compose.yml`, `run.sh`, and CORS defaults together.
+- **One origin in production.** The Go server serves both `/api/*` and the static export, so the frontend calls the API with a relative base URL by default. Do not introduce a second runtime host without updating `Dockerfile`, `docker-compose.yml`, `run.sh`, `run.ps1`, and CORS defaults together.
 - **Environment variables** are read only in `backend/internal/config/config.go`: `PORT`, `DB_PATH`, `JWT_SECRET`, `GIN_MODE`, `FRONTEND_DIR`, `ALLOWED_ORIGINS`. Adding one means updating that file, `Dockerfile`, `docker-compose.yml`, and `README.md`.
 - **API shape is a cross-stack contract.** Go structs in `backend/internal/models/` and TypeScript interfaces in `frontend/src/types/index.ts` describe the same JSON. A change to either side is incomplete until the other matches — JSON tags are camelCase on both sides.
 - **No secrets in the repo.** `JWT_SECRET` comes from the environment; the compose default `change-me-in-production` is a placeholder, not a value to rely on.

@@ -28,34 +28,27 @@ RUN \
   fi
 
 # ─────────────────────────────────────────────
-# Stage 2 – Build the Go backend (CGO required for go-sqlite3)
+# Stage 2 – Build the Go backend (pure Go, no CGO)
 # ─────────────────────────────────────────────
 FROM golang:1.24-bookworm AS backend-builder
 
 WORKDIR /app/backend
-
-# Install C build tools needed by mattn/go-sqlite3
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      gcc \
-      libc6-dev \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
 COPY backend/ .
 
-RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w" -o /fastchem-server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /fastchem-server ./cmd/server
 
 # ─────────────────────────────────────────────
 # Stage 3 – Minimal runtime image
 # ─────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 
-# ca-certificates for any outbound TLS; sqlite3 shared lib for CGO binary
+# ca-certificates for any outbound TLS
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
-      libsqlite3-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user

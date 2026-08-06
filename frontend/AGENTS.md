@@ -42,7 +42,7 @@ npm run lint
 npm run build
 ```
 
-`npm run build` type-checks and produces `out/`; it is the gate that must pass before any frontend change is considered done. Serve the full stack with `../run.sh` to check the export against the real backend.
+`npm run build` type-checks and produces `out/`; it is the gate that must pass before any frontend change is considered done. Serve the full stack with `../run.sh` (or `../run.ps1` on Windows) to check the export against the real backend.
 
 ## Child DOX Index
 

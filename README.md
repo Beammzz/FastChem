@@ -75,6 +75,19 @@ npm run dev
 
 Frontend runs on `http://localhost:3000`.
 
+### Full stack in one command
+
+```bash
+./run.sh      # macOS / Linux
+```
+
+```powershell
+.\run.ps1     # Windows PowerShell
+```
+
+Both build the frontend static export and start the backend, which serves the
+export and the API together on `http://localhost:8080`. Output goes to `logs/`.
+
 ### API Endpoints
 
 Everything below sits under `/api` behind an IP rate limiter (burst 30,

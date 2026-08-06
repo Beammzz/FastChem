@@ -101,7 +101,7 @@ export default function Home() {
             <span>FastChem v1.0</span>
           </div>
           <p className="text-xs text-gray-600">
-            © 2026 FastChem. สงวนลิขสิทธิ์
+            Made with ❤️ by Harumi
           </p>
         </div>
       </footer>
