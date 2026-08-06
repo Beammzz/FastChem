@@ -8,15 +8,16 @@ A fast-paced chemistry practice game — like [fastmath.io](https://fastmath.io)
 - **Backend:** Go (Gin framework)
 - **Communication:** REST API (JSON)
 
-## Features (MVP)
+## Features
 
-- Single Player Mode (Easy difficulty)
-- Auto-generated questions:
-  - **Atomic Structure** — protons, neutrons, electrons
-  - **Oxidation Numbers** — common compounds
-- Configurable timer (30s – 180s)
-- Score tracking (+10 per correct answer)
-- No authentication required
+- **Single player** — pick the question count, a difficulty, or your own set of
+  topics grouped by curriculum chapter
+- **Ranked 1v1** — matchmaking by ELO over a seeded question set, so both
+  players answer the same questions in the same order
+- **Custom rooms** — code-based lobbies
+- Auto-generated questions across 23 topics (see [Question coverage](#question-coverage))
+- Per-difficulty timers and scoring, with a combo multiplier for answer streaks
+- Casual play needs no account; leaderboards and ranked require one
 
 ## Project Structure
 
@@ -87,10 +88,10 @@ Frontend runs on `http://localhost:3000`.
 ```json
 {
   "id": "uuid",
-  "question": "How many protons does Carbon have?",
+  "question": "ธาตุ คาร์บอน (C) มีจำนวนโปรตอนเท่าใด?",
   "choices": ["4", "6", "8", "5"],
   "correctIndex": 1,
-  "timeLimit": 15,
+  "timeLimit": 30,
   "category": "atomic_structure",
   "difficulty": "easy"
 }
