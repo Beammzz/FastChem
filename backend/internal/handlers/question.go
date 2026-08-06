@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/takumi/fastchem/internal/anticheat"
 	"github.com/takumi/fastchem/internal/models"
 	"github.com/takumi/fastchem/internal/services"
 )
@@ -90,6 +91,23 @@ func (h *QuestionHandler) SubmitAnswer(c *gin.Context) {
 
 	// Determine correctness
 	correct := req.SelectedIndex == stored.CorrectIndex && !timedOut
+
+	// Casual play has no account, so history is keyed by address — a weak key
+	// that groups everyone behind one NAT together. Findings here are worth
+	// less than ranked ones, which is why nothing casual ships as reject.
+	verdict := anticheat.Evaluate(anticheat.Signal{
+		Subject:    anticheat.SubjectIP(c.ClientIP()),
+		Mode:       anticheat.ModeCasual,
+		QuestionID: req.QuestionID,
+		Difficulty: stored.Difficulty,
+		TimeSpent:  timeSpent,
+		TimeLimit:  cfg.TimeLimit,
+		Correct:    correct,
+		TimedOut:   timedOut,
+	})
+	if verdict.Rejected() {
+		correct = false
+	}
 
 	// Calculate score
 	scoreEarned, speedBonus := services.CalculateScore(stored.Difficulty, timeSpent, correct)

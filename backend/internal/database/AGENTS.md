@@ -23,6 +23,7 @@ Owns the SQLite connection and the entire schema. `db.go` is the only file here.
 - `scores` — one row per finished single-player game
 - `matches` / `question_attempts` — server-scored single-player match sessions
 - `ranked_matches` / `ranked_question_results` — 1v1 results and per-question breakdown
+- `anticheat_rules` — one row per detection rule (`enabled`, `action`, JSON `params`). Operator-editable at runtime: `internal/anticheat` seeds defaults at startup and reloads the table every 30 seconds, so an `UPDATE` takes effect without a restart. This package owns the DDL only; the seed and the reads live in `anticheat`.
 
 ## Work Guidance
 

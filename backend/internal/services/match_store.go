@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/takumi/fastchem/internal/anticheat"
 	"github.com/takumi/fastchem/internal/models"
 )
 
@@ -95,6 +96,25 @@ func (ms *MatchStore) RecordAnswer(
 	cfg := GetDifficultyConfig(m.Difficulty)
 	timedOut := timeSpent >= float64(cfg.TimeLimit)
 	correct := selectedIndex == question.CorrectIndex && !timedOut
+
+	// Evaluated while the match lock is held. That is safe because evaluation
+	// only touches memory — settings are cached and reloaded elsewhere — and
+	// anticheat never calls back into this package.
+	verdict := anticheat.Evaluate(anticheat.Signal{
+		Subject:    anticheat.SubjectUser(m.UserID),
+		UserID:     m.UserID,
+		MatchID:    matchID,
+		Mode:       anticheat.ModeMatch,
+		QuestionID: questionID,
+		Difficulty: question.Difficulty,
+		TimeSpent:  timeSpent,
+		TimeLimit:  cfg.TimeLimit,
+		Correct:    correct,
+		TimedOut:   timedOut,
+	})
+	if verdict.Rejected() {
+		correct = false
+	}
 
 	// Update combo
 	if correct {

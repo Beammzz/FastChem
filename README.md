@@ -149,6 +149,39 @@ Questions are generated, not stored, from 23 topics spanning บทที่ 2�
 Single player can filter by any of these; ranked draws 4 easy, 3 medium and
 3 hard from the same registry.
 
+## Anti-cheat
+
+The server already withholds the answer, measures answer times itself, and
+scores every mode server-side. On top of that, `backend/internal/anticheat`
+watches for answer patterns a human cannot produce:
+
+| Rule | Fires on |
+|---|---|
+| `impossible_speed` | A correct answer returned faster than the question can be read — per-difficulty floor, 1.0s easy to 2.0s hard |
+| `fast_streak` | 5 correct answers in a row, each under 3s — fast on every question, including the hard ones |
+| `uniform_timing` | 6 answers with under 0.2s of spread — machine cadence rather than a person |
+
+**Everything ships in observe mode.** Rules record findings to the log and
+change nothing a player sees. Enforcement is per-rule, stored in the
+`anticheat_rules` table, and reloaded every 30 seconds — so escalating is an
+`UPDATE`, not a deploy:
+
+```sql
+-- reject flagged answers (they score zero) instead of just logging them
+UPDATE anticheat_rules SET action = 'reject' WHERE name = 'impossible_speed';
+
+-- retune a threshold; params merge over the defaults
+UPDATE anticheat_rules SET params = '{"window": 8}' WHERE name = 'fast_streak';
+
+-- turn a rule off entirely
+UPDATE anticheat_rules SET enabled = 0 WHERE name = 'uniform_timing';
+```
+
+Adding a rule means implementing `Detector`, registering it, and giving it a
+default row — see `backend/internal/anticheat/AGENTS.md`. Findings currently
+go to the structured log through a `Sink` interface; persisting them to a table
+is one more `Sink`, with no change to any detector or call site.
+
 ## Extending
 
 - **New question types** — implement `Topic` in `backend/internal/services/topics_*.go`,

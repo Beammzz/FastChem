@@ -138,6 +138,16 @@ func migrate() {
 		`CREATE INDEX IF NOT EXISTS idx_ranked_matches_status ON ranked_matches(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_ranked_question_results_match ON ranked_question_results(ranked_match_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_ranked_question_results_user ON ranked_question_results(user_id)`,
+		// Anti-cheat rule settings, edited in place to retune detection without
+		// a restart. internal/anticheat seeds the defaults and reloads this
+		// table on a timer; params is rule-specific JSON.
+		`CREATE TABLE IF NOT EXISTS anticheat_rules (
+			name TEXT PRIMARY KEY,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			action TEXT NOT NULL DEFAULT 'observe',
+			params TEXT NOT NULL DEFAULT '{}',
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 
 	for _, q := range queries {
