@@ -13,6 +13,7 @@ type Config struct {
 	GinMode        string
 	FrontendDir    string
 	AllowedOrigins []string
+	AdminUsernames []string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -32,6 +33,15 @@ func Load() *Config {
 			if o != "" {
 				cfg.AllowedOrigins = append(cfg.AllowedOrigins, o)
 			}
+		}
+	}
+
+	// Accounts promoted to admin at startup. There is no default: with the
+	// variable unset nobody reaches /api/admin/*, which is the safe way for a
+	// fresh deployment to behave.
+	for _, name := range strings.Split(os.Getenv("ADMIN_USERNAMES"), ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			cfg.AdminUsernames = append(cfg.AdminUsernames, name)
 		}
 	}
 	if len(cfg.AllowedOrigins) == 0 {

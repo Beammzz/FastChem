@@ -41,6 +41,10 @@ COPY backend/ .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /fastchem-server ./cmd/server
 
+# Management CLI, shipped alongside the server so `docker exec` can grant the
+# first admin and retune anti-cheat without a restart.
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /fastchemctl ./cmd/fastchemctl
+
 # ─────────────────────────────────────────────
 # Stage 3 – Minimal runtime image
 # ─────────────────────────────────────────────
@@ -56,8 +60,9 @@ RUN useradd -m -u 1001 fastchem
 
 WORKDIR /app
 
-# Copy compiled server and frontend static export
+# Copy compiled binaries and frontend static export
 COPY --from=backend-builder /fastchem-server ./fastchem-server
+COPY --from=backend-builder /fastchemctl /usr/local/bin/fastchemctl
 COPY --from=frontend-builder /app/frontend/out ./frontend/out
 
 # Persistent data directory for the SQLite database
@@ -67,9 +72,12 @@ USER fastchem
 
 EXPOSE 8080
 
+# ADMIN_USERNAMES is empty on purpose: with no name set, no account can reach
+# /api/admin/*. Override it at run time to grant access.
 ENV PORT=8080 \
     GIN_MODE=release \
     DB_PATH=/data/fastchem.db \
-    FRONTEND_DIR=/app/frontend/out
+    FRONTEND_DIR=/app/frontend/out \
+    ADMIN_USERNAMES=""
 
 CMD ["/app/fastchem-server"]

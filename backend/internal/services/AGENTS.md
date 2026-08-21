@@ -37,6 +37,7 @@ Match state:
 - `ranked_match.go` — `RankedMatchService`, live 1v1 state, disconnects, finalization, persistence
 - `matchmaking.go` — `MatchmakingQueue`, rating-based pairing loop
 - `room.go` — `RoomService`, code-based custom rooms
+- `admin_snapshot.go` — read-only views of the in-memory stores for the admin console: `Len`, `Snapshot`, `ActiveUserIDs`, `TopicCatalog`, `PreviewQuestion`
 
 ## Local Contracts
 
@@ -74,6 +75,7 @@ Match state:
 - **Every store is mutex-guarded and sweeper-backed.** `MatchStore`, `QuestionStore`, `RankedMatchService`, and `RoomService` each expose a `CleanupOlderThan` / `CleanupStale*` method driven by `main.go`. A new store must follow the same shape or it grows without bound.
 - **Send on match channels only via `SafeSend` / `SafeSendTimeout`.** They recover from sends on closed channels, which is what keeps a disconnecting player from panicking the opponent's goroutine.
 - **`ActiveRankedMatch` state is guarded by its own mutex,** reachable through `Mu()`. Read-modify-write of scores, progress, or completion must hold it; `finalizeMatchLocked` assumes the caller already does.
+- **`admin_snapshot.go` copies, it never lends.** Every function there takes the owning lock, builds plain `models.Admin*` values, and releases. Returning a `*ActiveRankedMatch` or a live map to a handler would put a slow HTTP response inside a match lock, or read a score mid-update. `PreviewQuestion` likewise generates and returns — it never touches `GlobalQuestionStore`, so a preview can never be answered for points.
 
 ## Work Guidance
 

@@ -42,7 +42,11 @@ func main() {
 	if err := acSettings.Reload(context.Background()); err != nil {
 		slog.Error("anticheat: loading rules failed, running on defaults", "error", err)
 	}
-	anticheat.Init(anticheat.NewEngine(acSettings, anticheat.SlogSink{}))
+	// Findings go to the log and to anticheat_findings, which is what the admin
+	// console reads. The database sink buffers, so neither write sits on the
+	// answer path.
+	acFindings := anticheat.NewDBSink(database.DB, 512)
+	anticheat.Init(anticheat.NewEngine(acSettings, anticheat.MultiSink{anticheat.SlogSink{}, acFindings}))
 	for _, r := range acSettings.Snapshot() {
 		slog.Info("anticheat rule", "name", r.Name, "enabled", r.Enabled, "action", string(r.Action), "params", r.Params)
 	}
@@ -113,6 +117,14 @@ func main() {
 	roomService := services.NewRoomService(rankedMatchService)
 	roomHandler := handlers.NewRoomHandler(roomService, rankedMatchService, cfg.AllowedOriginsSet())
 
+	// Admin console. Accounts named in ADMIN_USERNAMES are promoted here; with
+	// the variable unset nobody can reach /api/admin/*.
+	handlers.PromoteAdmins(context.Background(), cfg.AdminUsernames)
+	adminHandler := handlers.NewAdminHandler(
+		rankedMatchService, matchmakingQueue, roomService,
+		acSettings, acFindings, generator, cfg.DBPath,
+	)
+
 	// Periodically clean up stale ranked matches (no activity for 30 minutes)
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
@@ -182,6 +194,27 @@ func main() {
 		{
 			// WebSocket endpoint (auth via query param)
 			room.GET("/ws", roomHandler.HandleWebSocket)
+		}
+
+		// Admin console (authenticated, then gated on users.is_admin)
+		admin := api.Group("/admin")
+		admin.Use(middleware.AuthRequired(), adminHandler.RequireAdmin())
+		{
+			admin.GET("/overview", adminHandler.GetOverview)
+			admin.GET("/analytics", adminHandler.GetAnalytics)
+			admin.GET("/leaderboards", adminHandler.GetLeaderboards)
+			admin.GET("/live", adminHandler.GetLive)
+			admin.GET("/matches", adminHandler.GetMatches)
+			admin.GET("/topics", adminHandler.GetTopics)
+			admin.GET("/topics/preview", adminHandler.PreviewQuestion)
+
+			admin.GET("/users", adminHandler.GetUsers)
+			admin.POST("/users/update", adminHandler.UpdateUser)
+			admin.POST("/users/delete", adminHandler.DeleteUser)
+
+			admin.GET("/anticheat/rules", adminHandler.GetRules)
+			admin.POST("/anticheat/rules", adminHandler.UpdateRule)
+			admin.GET("/anticheat/findings", adminHandler.GetFindings)
 		}
 	}
 

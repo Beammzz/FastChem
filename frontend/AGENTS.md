@@ -47,6 +47,6 @@ npm run build
 ## Child DOX Index
 
 - `src/app/AGENTS.md` — routes, layout, global styles
-- `src/components/AGENTS.md` — presentational and provider components
+- `src/components/AGENTS.md` — presentational and provider components (and, under it, `src/components/admin/` for the operator console)
 - `src/hooks/AGENTS.md` — game state and WebSocket session hooks
 - `src/lib/AGENTS.md` — API client and browser helpers

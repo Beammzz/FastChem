@@ -29,6 +29,15 @@ export default function Navbar() {
             <div className="w-16 h-8 bg-white/5 rounded-lg animate-pulse" />
           ) : user ? (
             <div className="flex items-center gap-2 sm:gap-4">
+              {user.isAdmin && (
+                <Link
+                  href="/admin"
+                  className="hover:text-white transition-colors"
+                  title="ระบบผู้ดูแล"
+                >
+                  ⚙️
+                </Link>
+              )}
               <Link
                 href={`/profile/${user.username}`}
                 className="text-violet-400 font-medium hover:text-violet-300 transition-colors truncate max-w-[80px] sm:max-w-none"

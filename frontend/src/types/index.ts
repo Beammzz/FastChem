@@ -119,6 +119,9 @@ export interface User {
   id: number;
   username: string;
   totalPoints?: number;
+  // Set only by /api/auth/me. Decides whether the console is offered; it
+  // grants nothing — every admin route re-checks the flag server-side.
+  isAdmin?: boolean;
 }
 
 export interface AuthResponse {
@@ -302,4 +305,244 @@ export interface RankedLeaderboardEntry {
   wins: number;
   losses: number;
   highestRating: number;
+}
+
+// ─── Admin types ─────────────────────────────────────────────────
+// Mirrors backend/internal/models/admin.go.
+
+export interface AdminBucket {
+  label: string;
+  count: number;
+  value: number;
+}
+
+export interface AdminOverview {
+  users: number;
+  admins: number;
+  newUsers7d: number;
+  activePlayers7d: number;
+  games: number;
+  games24h: number;
+  soloMatches: number;
+  rankedMatches: number;
+  questionsAnswered: number;
+  totalPoints: number;
+  averageAccuracy: number;
+  findings: number;
+  findings24h: number;
+  findingsDropped: number;
+  rejectingRules: number;
+  queueSize: number;
+  liveMatches: number;
+  openRooms: number;
+  liveSoloMatches: number;
+  storedQuestions: number;
+  topics: number;
+  uptimeSeconds: number;
+  databaseBytes: number;
+  goroutines: number;
+}
+
+export interface AdminDailyPoint {
+  date: string;
+  games: number;
+  players: number;
+  points: number;
+  rankedMatches: number;
+  findings: number;
+}
+
+export interface AdminTopicStat {
+  topic: string;
+  difficulty: string;
+  attempts: number;
+  correct: number;
+  accuracy: number;
+  averageTime: number;
+}
+
+export interface AdminAnalytics {
+  daily: AdminDailyPoint[];
+  difficulty: AdminBucket[];
+  topics: AdminTopicStat[];
+  hours: AdminBucket[];
+  ratings: AdminBucket[];
+  rules: AdminBucket[];
+}
+
+export interface AdminUserRow {
+  id: number;
+  username: string;
+  isAdmin: boolean;
+  totalPoints: number;
+  rating: number;
+  rankedWins: number;
+  rankedLosses: number;
+  highestRating: number;
+  games: number;
+  highScore: number;
+  totalAnswered: number;
+  totalCorrect: number;
+  accuracy: number;
+  findings: number;
+  createdAt: string;
+  lastPlayed: string | null;
+  online: boolean;
+}
+
+export interface AdminUsersResponse {
+  users: AdminUserRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AdminUserUpdate {
+  userId: number;
+  isAdmin?: boolean;
+  rating?: number;
+  totalPoints?: number;
+  password?: string;
+}
+
+export interface AdminFinding {
+  id: number;
+  at: string;
+  subject: string;
+  userId: number;
+  username: string;
+  matchId: number;
+  mode: string;
+  questionId: string;
+  difficulty: string;
+  timeSpent: number;
+  rule: string;
+  detail: string;
+  action: string;
+}
+
+export interface AdminFindingsResponse {
+  findings: AdminFinding[];
+  total: number;
+  page: number;
+  pageSize: number;
+  byRule: AdminBucket[];
+  byMode: AdminBucket[];
+  byAction: AdminBucket[];
+  dropped: number;
+}
+
+export interface AdminRule {
+  name: string;
+  enabled: boolean;
+  action: string;
+  params: Record<string, number>;
+  findings: number;
+  findings24h: number;
+}
+
+export interface AdminQueueEntry {
+  userId: number;
+  username: string;
+  rating: number;
+  waitingSeconds: number;
+}
+
+export interface AdminLivePlayer {
+  userId: number;
+  username: string;
+  rating: number;
+  totalScore: number;
+  answered: number;
+  correct: number;
+  combo: number;
+  connected: boolean;
+}
+
+export interface AdminLiveMatch {
+  matchId: number;
+  status: string;
+  question: number;
+  createdAt: string;
+  player1: AdminLivePlayer;
+  player2: AdminLivePlayer;
+}
+
+export interface AdminRoom {
+  code: string;
+  hostId: number;
+  hostName: string;
+  guestId: number;
+  guestName: string;
+  matchId: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface AdminLive {
+  queue: AdminQueueEntry[];
+  matches: AdminLiveMatch[];
+  rooms: AdminRoom[];
+  soloMatches: number;
+  storedQuestions: number;
+}
+
+export interface AdminRankedMatchRow {
+  matchId: number;
+  player1: string;
+  player2: string;
+  player1Score: number;
+  player2Score: number;
+  winner: string;
+  status: string;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
+export interface AdminSoloMatchRow {
+  matchId: number;
+  username: string;
+  difficulty: string;
+  totalScore: number;
+  bestCombo: number;
+  attempts: number;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+export interface AdminScoreRow {
+  id: number;
+  userId: number;
+  username: string;
+  score: number;
+  totalAnswered: number;
+  correctAnswers: number;
+  difficulty: string;
+  timeSpent: number;
+  playedAt: string;
+}
+
+export interface AdminMatchesResponse {
+  ranked: AdminRankedMatchRow[];
+  solo: AdminSoloMatchRow[];
+  scores: AdminScoreRow[];
+}
+
+export interface AdminLeaderboards {
+  casual: LeaderboardEntry[];
+  ranked: RankedLeaderboardEntry[];
+}
+
+export interface AdminTopic {
+  category: string;
+  difficulty: string;
+}
+
+export interface AdminQuestionPreview {
+  question: string;
+  choices: string[];
+  correctIndex: number;
+  category: string;
+  difficulty: string;
+  timeLimit: number;
 }

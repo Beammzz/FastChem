@@ -1,10 +1,12 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -145,6 +147,27 @@ func migrate() {
 			params TEXT NOT NULL DEFAULT '{}',
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		// One row per anti-cheat finding, written asynchronously by
+		// anticheat.DBSink so the admin console can review detections instead of
+		// grepping the log. user_id is 0 for casual play, so it carries no
+		// foreign key — the row must survive an anonymous subject.
+		`CREATE TABLE IF NOT EXISTS anticheat_findings (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			at DATETIME NOT NULL,
+			subject TEXT NOT NULL,
+			user_id INTEGER NOT NULL DEFAULT 0,
+			match_id INTEGER NOT NULL DEFAULT 0,
+			mode TEXT NOT NULL DEFAULT '',
+			question_id TEXT NOT NULL DEFAULT '',
+			difficulty TEXT NOT NULL DEFAULT '',
+			time_spent REAL NOT NULL DEFAULT 0,
+			rule TEXT NOT NULL,
+			detail TEXT NOT NULL DEFAULT '',
+			action TEXT NOT NULL DEFAULT 'observe'
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_anticheat_findings_at ON anticheat_findings(at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_anticheat_findings_rule ON anticheat_findings(rule)`,
+		`CREATE INDEX IF NOT EXISTS idx_anticheat_findings_user ON anticheat_findings(user_id)`,
 	}
 
 	for _, q := range queries {
@@ -162,6 +185,51 @@ func migrate() {
 	DB.Exec("ALTER TABLE users ADD COLUMN ranked_wins INTEGER NOT NULL DEFAULT 0")
 	DB.Exec("ALTER TABLE users ADD COLUMN ranked_losses INTEGER NOT NULL DEFAULT 0")
 	DB.Exec("ALTER TABLE users ADD COLUMN highest_rating INTEGER NOT NULL DEFAULT 1200")
+
+	// Admin console access. Nobody is an admin by default; ADMIN_USERNAMES
+	// promotes accounts at startup and the console can promote from there.
+	DB.Exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+}
+
+// userCascade deletes everything that references a user, children first,
+// because foreign keys are enforced and none of them declares ON DELETE.
+//
+// It lives beside migrate() on purpose: which tables point at users is schema
+// knowledge, and a new table with a user_id column has to be added here in the
+// same edit that creates it. Both the admin API and cmd/fastchemctl call
+// DeleteUser, so the list cannot drift between them.
+var userCascade = []string{
+	"DELETE FROM question_attempts WHERE match_id IN (SELECT id FROM matches WHERE user_id = ?)",
+	"DELETE FROM matches WHERE user_id = ?",
+	"DELETE FROM scores WHERE user_id = ?",
+	"DELETE FROM ranked_question_results WHERE user_id = ? OR ranked_match_id IN (SELECT id FROM ranked_matches WHERE player1_id = ? OR player2_id = ?)",
+	"DELETE FROM ranked_matches WHERE player1_id = ? OR player2_id = ?",
+	"DELETE FROM anticheat_findings WHERE user_id = ?",
+	"DELETE FROM users WHERE id = ?",
+}
+
+// DeleteUser removes an account and everything it owns, in one transaction.
+//
+// Ranked matches go with it, which also removes them from the opponent's
+// history — a 1v1 whose player row is gone cannot be rendered. Callers are
+// expected to have confirmed that with a human first.
+func DeleteUser(ctx context.Context, userID int64) error {
+	tx, err := DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, stmt := range userCascade {
+		args := make([]any, strings.Count(stmt, "?"))
+		for i := range args {
+			args[i] = userID
+		}
+		if _, err := tx.ExecContext(ctx, stmt, args...); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // Close shuts down the database connection.

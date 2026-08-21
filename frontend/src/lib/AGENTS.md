@@ -6,7 +6,7 @@ Cross-cutting helpers: the typed HTTP client and small browser utilities.
 
 ## Ownership
 
-- `api.ts` — every REST call to the Go backend, the `API_BASE` constant, the `authHeaders()` helper, and the WebSocket URL builders `getRankedWebSocketURL()` / `getRoomWebSocketURL(action, code?)`
+- `api.ts` — every REST call to the Go backend, the `API_BASE` constant, the `authHeaders()` helper, the `adminGet` / `adminPost` wrappers, and the WebSocket URL builders `getRankedWebSocketURL()` / `getRoomWebSocketURL(action, code?)`
 - `haptic.ts` — `triggerHaptic(type)`, a wrapper over the Web Vibration API with `correct` / `wrong` / `timeout` patterns
 
 ## Local Contracts
@@ -17,6 +17,7 @@ Cross-cutting helpers: the typed HTTP client and small browser utilities.
 - **Every function is typed against `@/types`** for both request and response. No `any`, and no inline response shapes.
 - **Auth headers come from `authHeaders()`**, which reads the `token` from `localStorage` behind a `typeof window !== "undefined"` guard and returns `{}` when absent.
 - **Non-OK responses throw an `Error`.** Callers handle failure; these functions never return a partial or fabricated result on error.
+- **Admin calls go through `adminGet` / `adminPost`.** They attach auth, send `cache: "no-store"`, and surface the server's `error` message so the console can show why a write was refused. Every mutation is a `POST` because CORS allows only `GET`, `POST` and `OPTIONS` — do not reach for `PATCH` or `DELETE` without widening `AllowMethods` in `main.go` first.
 - **`haptic` must degrade silently** where `navigator.vibrate` is unavailable — most desktop browsers and iOS Safari.
 
 ## Work Guidance

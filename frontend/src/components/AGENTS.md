@@ -28,7 +28,8 @@ Mode-specific UI:
 - **`AuthProvider` is the single source of auth truth.** It owns the `localStorage` `token` read/write; every consumer uses `useAuth()`. Do not touch `localStorage` for auth elsewhere.
 - **Never render or infer the correct answer before the server returns it.** `QuestionCard` marks a choice from its `revealedIndex` prop, which the hook fills in from the API's answer result — `Question` has no `correctIndex` to read. `revealedIndex` stays null while the question is open and when a submit failed, so a card that cannot reach the server highlights nothing and says the question went unscored rather than inventing a verdict.
 - **Category labels and colours come from `@/data/categories`.** `QuestionCard` and `RankedMatchUI` call `categoryLabel` / `categoryBadgeClass` rather than switching on the id themselves, so a topic added on the server is named in one place. Both helpers fall back for an unknown id instead of rendering nothing.
-- **Default-export one component per file**, named to match the filename. `AuthProvider.tsx` is the exception: it exports both `AuthProvider` and `useAuth` as named exports.
+- **Default-export one component per file**, named to match the filename. Two exceptions: `AuthProvider.tsx` exports `AuthProvider` and `useAuth` as named exports, and `admin/ui.tsx` exports the console's shared primitives.
+- **`Navbar` shows the admin link from `user.isAdmin`.** That flag comes from `/api/auth/me` and decides rendering only — the server re-checks it on every admin route.
 - Prop shapes are declared as a local `interface <Name>Props` above the component.
 - Every file here is a client component (`"use client"`).
 
@@ -50,4 +51,4 @@ Check rendering at mobile width — the game screens are played on phones, and t
 
 ## Child DOX Index
 
-- No child AGENTS.md files. This folder is flat.
+- `admin/AGENTS.md` — the operator console's panels and their shared UI primitives

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"sort"
@@ -176,6 +178,52 @@ func (s *Store) Seed(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// Save writes one rule's settings and refreshes the cache, so an operator can
+// retune from the admin console instead of hand-editing SQL and waiting for the
+// reload ticker.
+//
+// Unlike Reload, this validates: an unknown rule name or an unknown action is
+// an error rather than a silent downgrade, because the caller is a UI that can
+// show the message. Params are stored as given and merged over the compiled
+// defaults on the way back in, so an omitted threshold keeps its default.
+func (s *Store) Save(ctx context.Context, name string, enabled bool, action Action, params Params) error {
+	if s == nil || s.db == nil {
+		return errors.New("anticheat: no settings database")
+	}
+
+	s.mu.RLock()
+	_, known := s.rules[name]
+	s.mu.RUnlock()
+	if !known {
+		return fmt.Errorf("anticheat: unknown rule %q", name)
+	}
+	if _, ok := ParseAction(string(action)); !ok {
+		return fmt.Errorf("anticheat: unknown action %q", action)
+	}
+
+	encoded, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+	enabledInt := 0
+	if enabled {
+		enabledInt = 1
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO anticheat_rules (name, enabled, action, params, updated_at)
+		 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+		 ON CONFLICT(name) DO UPDATE SET
+		   enabled = excluded.enabled,
+		   action = excluded.action,
+		   params = excluded.params,
+		   updated_at = CURRENT_TIMESTAMP`,
+		name, enabledInt, string(action), string(encoded),
+	); err != nil {
+		return err
+	}
+	return s.Reload(ctx)
 }
 
 // Reload replaces the cached rule set from the database. Rules with no row

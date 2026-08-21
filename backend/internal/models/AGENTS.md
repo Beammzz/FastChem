@@ -10,12 +10,16 @@ Plain data structs shared by handlers, services, and the database layer. Defines
 - `user.go` — `User`, `RegisterRequest`, `LoginRequest`, `AuthResponse`, `UserPublic`
 - `score.go` — `Score`, `SubmitScoreRequest`, `LeaderboardEntry`, `UserStats`, `ProfileResponse`
 - `match.go` — single-player match session types, `DefaultQuestionsPerMatch = 10`
-- `ranked.go` — ranked match types, the `WSEventType` constants, and every WebSocket payload struct
+- `ranked.go` — ranked match types, `RankedLeaderboardEntry`, the `WSEventType` constants, and every WebSocket payload struct
+- `admin.go` — the read models behind `/api/admin/*`: overview, analytics, user rows, findings, rules, live state, recent matches, topics
 
 ## Local Contracts
 
 - **This package is the JSON contract.** Every field carries an explicit camelCase `json:` tag, and `frontend/src/types/index.ts` mirrors these structs. Renaming a field or changing its type is a two-sided change.
 - **Never expose a password hash.** `User.PasswordHash` is tagged `json:"-"`; user-facing responses use `UserPublic`.
+- **`UserPublic.IsAdmin` is set only on `/api/auth/me`,** where the caller is the account itself. It is `omitempty` and tells the client whether to offer the console; it authorises nothing, because every admin route re-reads the flag from the database.
+- **The `Admin*` types aggregate across tables on purpose.** They are read models for one operator screen, not the shape of any single row, and nothing but `handlers/admin.go` writes them. They are still the JSON contract and still mirrored in `frontend/src/types/index.ts`.
+- **`AdminQuestionPreview` carries `correctIndex` where `Question` hides it.** That is not an exception to the rule — it is a different object. It describes a question generated for inspection and thrown away, never one a player is answering.
 - **Never expose an unanswered question's answer.** `Question.CorrectIndex` is tagged `json:"-"` for the same reason: the struct goes out before the player has chosen, so a serialized answer is readable from the network tab. `AnswerResponse`, `MatchAnswerResponse` and `AnswerResultPayload` carry `correctIndex` because they are sent *after* the answer is in — that is where the reveal belongs. `TestQuestionJSONOmitsTheAnswer` pins both halves.
 - **No logic and no imports from sibling packages.** Models depend only on the standard library, which keeps `services` and `handlers` free to import them without cycles.
 - **Match shape constants live here**, not in services: `DefaultQuestionsPerMatch = 10`, `RankedQuestionsPerMatch = 10`, and the ranked difficulty split `RankedEasyCount = 4`, `RankedMediumCount = 3`, `RankedHardCount = 3`. The counts must sum to `RankedQuestionsPerMatch`.

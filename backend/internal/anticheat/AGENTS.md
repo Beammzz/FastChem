@@ -8,9 +8,9 @@ Watches answers that have already been scored and reports the ones a human could
 
 - `anticheat.go` — `Signal`, `Verdict`, `Finding`, `Action`, the `Engine`, and the process-wide default (`Init`, `Evaluate`, `Sweep`)
 - `detectors.go` — the `Detector` interface and the three built-in rules: `impossible_speed`, `fast_streak`, `uniform_timing`
-- `settings.go` — `Rule`, `Params`, and the `Store` that loads them from the `anticheat_rules` table
+- `settings.go` — `Rule`, `Params`, the `Store` that loads them from the `anticheat_rules` table, and `Save` for operator edits
 - `history.go` — the bounded per-subject answer window the windowed rules read
-- `sink.go` — the `Sink` seam findings are written through, plus `SlogSink`, `DiscardSink`, `MultiSink`
+- `sink.go` — the `Sink` seam findings are written through, plus `SlogSink`, `DBSink`, `DiscardSink`, `MultiSink`
 
 ## Local Contracts
 
@@ -24,6 +24,8 @@ Watches answers that have already been scored and reports the ones a human could
 - **Registration is append-only** (`builtinDetectors`, then `Engine.Use`). Order fixes the order findings appear in.
 - **Timed-out answers are not evidence.** Every timeout lands on the same difficulty time limit, so a player who walks away produces a run of identical times. `uniform_timing` skips them and `fast_streak` requires correctness. A new rule that reads `TimeSpent` across a window must do the same or it will flag absence as automation.
 - **The subject key differs by mode.** Signed-in play keys on `SubjectUser`; casual keys on `SubjectIP`, which groups everyone behind one NAT together. Casual findings are correspondingly weak.
+- **`DBSink` drops rather than blocks.** Findings go onto a buffered channel drained by one writer goroutine; a full buffer increments `Dropped()` and discards the event. `Record` runs under a match lock, so waiting on SQLite's single writer there would stall every match. The admin console surfaces the drop count — a sink that silently loses findings would make the table look like quiet rather than saturation.
+- **`Save` validates, `Reload` degrades.** They are not symmetric on purpose: `Reload` reads whatever is in the table and falls back on anything it cannot parse, because the answer path runs through it. `Save` takes input from a UI, so an unknown rule name or action is an error it can report instead of a silent downgrade. It reloads on success, so a console edit applies at once rather than on the next tick.
 
 ## Call sites
 
@@ -35,7 +37,7 @@ Four, all passing server-measured values — `TimeSpent` is derived from when th
 
 ## Settings
 
-Rules live in `anticheat_rules`, seeded at startup and reloaded every 30 seconds by `cmd/server/main.go`. Retune without a restart:
+Rules live in `anticheat_rules`, seeded at startup and reloaded every 30 seconds by `cmd/server/main.go`. The admin console's Anti-cheat tab edits them through `Store.Save`; the SQL below is the same change by hand, picked up on the next reload:
 
 ```sql
 UPDATE anticheat_rules SET action = 'reject'          WHERE name = 'impossible_speed';
@@ -50,7 +52,7 @@ UPDATE anticheat_rules SET params = '{"window": 8}'   WHERE name = 'fast_streak'
 - A new rule is a `Detector` in `detectors.go`, an entry in `builtinDetectors`, and a row in `defaultRules` — all three, or it is untunable.
 - Pick thresholds that under-flag. A rule that cries wolf gets ignored, and observe mode exists to show real distributions before anything is tightened.
 - A new action means extending the `Action` enum, `ParseAction`, `severity`, and every call site. Do not return an action no call site handles.
-- Persisting findings is a `Sink` implementation passed to `NewEngine`; no detector or call site changes.
+- Another destination for findings is a `Sink` implementation passed to `NewEngine`; no detector or call site changes. `main.go` already fans out to `SlogSink` and `DBSink` through a `MultiSink`.
 
 ## Verification
 

@@ -13,6 +13,7 @@ Gin HTTP handlers and the WebSocket session loops. Translates requests into serv
 - `ranked.go` — `/api/ranked/ws`, `/api/ranked/stats`, `/api/ranked/history`, `/api/ranked/leaderboard`
 - `room.go` — `/api/room/ws`, room create and join flows
 - `match_session.go` — `MatchSessionHandler`, the shared in-match loop used by both ranked and room matches
+- `admin.go` — every `/api/admin/*` route, the `RequireAdmin()` gate, `PromoteAdmins`, and the shared query helpers `eachRow` / `queryBuckets`
 
 ## Local Contracts
 
@@ -27,7 +28,13 @@ Gin HTTP handlers and the WebSocket session loops. Translates requests into serv
 - **Question timeouts are server-side.** `startQuestionTimeout` / `startSyncedQuestionTimeout` end a question regardless of what the client sends; a late or absent answer is scored as a timeout.
 - **Both players advance together.** `tryAdvanceBothPlayers` gates the next question, and `notifyOpponentProgress` keeps the other side updated.
 - **Passwords are bcrypt-hashed in `auth.go`** and never returned. Login failures give one generic message — do not distinguish "no such user" from "wrong password".
-- **The leaderboard is cached with a TTL.** Score submission must not assume its write is immediately visible in `GET /api/leaderboard`.
+- **The leaderboard is cached with a TTL.** Score submission must not assume its write is immediately visible in `GET /api/leaderboard`. `GET /api/admin/leaderboards` bypasses the cache through `rankedLadder`, shared with `/api/ranked/leaderboard` so the two views cannot disagree about what the ladder is.
+- **`RequireAdmin()` reads `users.is_admin` on every request.** The flag is deliberately not a JWT claim: tokens live a week, and a demotion has to bite immediately. It also keeps `middleware` free of database access, which is that package's contract. `UserPublic.IsAdmin` on `/api/auth/me` is a rendering hint only — it grants nothing.
+- **An admin cannot demote or delete themselves.** `UpdateUser` and `DeleteUser` reject it. Without those guards the last admin can lock everyone out of the console — recoverable only with `fastchemctl user grant`.
+- **The delete cascade lives in `database.DeleteUser`,** not here, because `cmd/fastchemctl` performs the same delete and the statement order is schema knowledge. Do not inline it back into this handler.
+- **Admin reads go through `eachRow`.** SQLite is capped at two pooled connections, so a handler holding three result sets open at once deadlocks waiting for a third. Never `defer rows.Close()` at function scope in this file and then run another query.
+- **`?sort=` is whitelisted through `userSortColumns`.** That value is spliced into SQL because a placeholder cannot carry a column name. A sort key that does not come from that map is an injection.
+- **`GET /api/admin/topics/preview` is the one endpoint that returns an answer up front.** It is allowed only because the question is generated, returned, and discarded — never written to `GlobalQuestionStore`, never scored, never served to a player. Do not reuse the generator's live path here.
 
 ## Work Guidance
 

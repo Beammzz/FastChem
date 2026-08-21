@@ -8,6 +8,7 @@ Owns the SQLite connection and the entire schema. `db.go` is the only file here.
 
 - `database.DB` — the process-wide `*sql.DB`, opened by `Init(dbPath)` and closed by `Close()`
 - The `migrate()` function — the single source of truth for every table, index, and column in FastChem
+- `userCascade` / `DeleteUser` — the ordered delete of everything referencing a user
 
 ## Local Contracts
 
@@ -20,15 +21,16 @@ Owns the SQLite connection and the entire schema. `db.go` is the only file here.
 
 ## Tables
 
-- `users` — credentials, `total_points`, plus ranked columns added by `ALTER`: `rating` (default 1200), `ranked_wins`, `ranked_losses`, `highest_rating`
+- `users` — credentials, `total_points`, plus columns added by `ALTER`: `rating` (default 1200), `ranked_wins`, `ranked_losses`, `highest_rating`, and `is_admin` (default 0 — the admin console gate, granted by `ADMIN_USERNAMES` at startup or from the console)
 - `scores` — one row per finished single-player game
 - `matches` / `question_attempts` — server-scored single-player match sessions
 - `ranked_matches` / `ranked_question_results` — 1v1 results and per-question breakdown
 - `anticheat_rules` — one row per detection rule (`enabled`, `action`, JSON `params`). Operator-editable at runtime: `internal/anticheat` seeds defaults at startup and reloads the table every 30 seconds, so an `UPDATE` takes effect without a restart. This package owns the DDL only; the seed and the reads live in `anticheat`.
+- `anticheat_findings` — one row per detection, written asynchronously by `anticheat.DBSink` and read by the admin console. It carries **no foreign key on `user_id`**, deliberately: casual play has no account and writes 0. `at` is stored as UTC text in SQLite's own `YYYY-MM-DD HH:MM:SS` format so `date(at)` and `at >= datetime('now', …)` compare correctly — a bound `time.Time` would carry a zone offset and break both.
 
 ## Work Guidance
 
-- Queries live in the packages that use them (`handlers`, `services`); this package exposes the handle, not a query layer.
+- Queries live in the packages that use them (`handlers`, `services`); this package exposes the handle, not a query layer. **`DeleteUser` is the one exception,** and only because its statement order *is* schema knowledge: which tables carry a `user_id` is decided by `migrate()` a few lines above it, and two callers (the admin API and `cmd/fastchemctl`) would otherwise keep separate copies that drift the first time a table is added. A new table referencing `users` means a new line in `userCascade` in the same edit.
 - Add an index alongside any new column that will be filtered or ordered on.
 - Keep foreign keys declared — `PRAGMA foreign_keys=ON` is enabled.
 

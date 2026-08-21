@@ -18,6 +18,12 @@ A fast-paced chemistry practice game — like [fastmath.io](https://fastmath.io)
 - Auto-generated questions across 23 topics (see [Question coverage](#question-coverage))
 - Per-difficulty timers and scoring, with a combo multiplier for answer streaks
 - Casual play needs no account; leaderboards and ranked require one
+- **Admin console** at `/admin` — analytics, both leaderboards, user management,
+  live match/queue/room state, the anti-cheat manager and a question-bank
+  browser (see [Admin console](#admin-console))
+- **`fastchemctl`** — a management CLI for the jobs a browser cannot do: grant
+  the first admin, retune anti-cheat, back up a live database
+  (see [fastchemctl](#fastchemctl))
 
 ## Project Structure
 
@@ -117,6 +123,27 @@ since a browser cannot set headers on a WebSocket handshake.
 | GET  | `/api/ranked/leaderboard` | — | Ranked ladder |
 | GET  | `/api/room/ws` | `?token=` | WebSocket: custom rooms, `?action=create` or `?action=join&code=<code>` |
 
+Admin routes need a token **and** `users.is_admin`; a signed-in non-admin gets
+`403`. The flag is read from the database on every request, so demoting an
+account takes effect at once rather than when its week-long token expires.
+Writes are `POST` because CORS allows only `GET`, `POST` and `OPTIONS`.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET  | `/api/admin/overview` | Headline counts: accounts, games, findings, live state, uptime, DB size |
+| GET  | `/api/admin/analytics` | Daily activity (`?days=`, max 90), difficulty split, per-topic accuracy, hour-of-day, rating bands, findings per rule |
+| GET  | `/api/admin/leaderboards` | Both boards, read live rather than from the public 30s cache (`?limit=`) |
+| GET  | `/api/admin/users` | Paged user table with play stats (`?page=`, `?pageSize=`, `?search=`, `?sort=`, `?order=`) |
+| POST | `/api/admin/users/update` | Set `isAdmin`, `rating`, `totalPoints` or `password`; omitted fields are left alone |
+| POST | `/api/admin/users/delete` | Delete an account and everything it owns |
+| GET  | `/api/admin/anticheat/rules` | Live rule settings plus how often each has fired |
+| POST | `/api/admin/anticheat/rules` | Retune a rule — takes effect immediately, no restart and no waiting for the reload ticker |
+| GET  | `/api/admin/anticheat/findings` | Paged findings with filters (`?rule=`, `?mode=`, `?action=`, `?userId=`) and breakdowns of the filtered set |
+| GET  | `/api/admin/live` | Matchmaking queue, in-progress matches, open rooms — in-memory state no table holds |
+| GET  | `/api/admin/matches` | Recent ranked matches, single-player matches and submitted scores (`?limit=`) |
+| GET  | `/api/admin/topics` | Every registered question topic |
+| GET  | `/api/admin/topics/preview` | Generate a throwaway sample question with its answer (`?category=`) |
+
 Any path that does not start with `/api/` falls through to the Next.js static
 export in `frontend/out/`.
 
@@ -174,10 +201,11 @@ watches for answer patterns a human cannot produce:
 | `fast_streak` | 5 correct answers in a row, each under 3s — fast on every question, including the hard ones |
 | `uniform_timing` | 6 answers with under 0.2s of spread — machine cadence rather than a person |
 
-**Everything ships in observe mode.** Rules record findings to the log and
-change nothing a player sees. Enforcement is per-rule, stored in the
-`anticheat_rules` table, and reloaded every 30 seconds — so escalating is an
-`UPDATE`, not a deploy:
+**Everything ships in observe mode.** Rules record findings and change nothing
+a player sees. Enforcement is per-rule, stored in the `anticheat_rules` table,
+and reloaded every 30 seconds — so escalating is a setting, not a deploy. The
+admin console's Anti-cheat tab edits the same rules and applies them
+immediately; the equivalent by hand is:
 
 ```sql
 -- reject flagged answers (they score zero) instead of just logging them
@@ -191,9 +219,86 @@ UPDATE anticheat_rules SET enabled = 0 WHERE name = 'uniform_timing';
 ```
 
 Adding a rule means implementing `Detector`, registering it, and giving it a
-default row — see `backend/internal/anticheat/AGENTS.md`. Findings currently
-go to the structured log through a `Sink` interface; persisting them to a table
-is one more `Sink`, with no change to any detector or call site.
+default row — see `backend/internal/anticheat/AGENTS.md`. Findings go to the
+structured log and to the `anticheat_findings` table through the `Sink`
+interface; the database sink buffers and writes on its own goroutine, so it
+never sits on a player's answer path. Under sustained load it drops rather than
+blocks, and the console reports the drop count so the table is never silently
+an undercount.
+
+## Admin console
+
+`/admin` is a single page of tabs backed by the `/api/admin/*` routes above:
+
+| Tab | What it shows |
+|---|---|
+| ภาพรวม | Headline counts, daily activity, difficulty and hour-of-day distributions, rating bands, per-topic accuracy, and process health (uptime, DB size, goroutines) |
+| ผู้เล่น | Searchable, sortable user table — points, rating, accuracy, flag count, last played, online now. Edit rating, points and password; grant or remove admin; delete an account |
+| Anti-cheat | Every rule with its live thresholds and hit counts, editable in place; the findings log with filters and breakdowns |
+| สด | Matchmaking queue, matches in progress with per-player score and connection state, open rooms, and recent finished matches. Refreshes every 5s |
+| กระดานผู้นำ | Both leaderboards, read live rather than cached |
+| คลังคำถาม | All 23 topics; generate a sample question with its answer |
+
+**Access.** No account is an admin by default. Either set `ADMIN_USERNAMES` to a
+comma-separated list and restart — accounts that already exist are promoted at
+startup, a name with no account yet is skipped — or grant it with no restart at
+all using the CLI below:
+
+```bash
+ADMIN_USERNAMES=alice,bob ./fastchem-server   # at startup
+fastchemctl user grant alice                  # any time, takes effect at once
+```
+
+An admin cannot remove their own admin flag or delete their own account —
+otherwise the last admin could lock everyone out.
+
+## fastchemctl
+
+A second binary (`backend/cmd/fastchemctl`) that manages the database from a
+shell. It opens SQLite directly rather than calling the admin API, which is the
+point: it works before the first admin exists, while the server is down, and
+over `docker exec`. The web console is the better tool for everything else.
+
+```bash
+cd backend && go build -o fastchemctl ./cmd/fastchemctl
+./fastchemctl status
+```
+
+| Command | Does |
+|---|---|
+| `status` | Counts, plus whether any admin exists and whether any rule is rejecting |
+| `user list` | Accounts with points, rating, games and flag counts — `-search`, `-limit`, `-sort` |
+| `user show <name>` | One account in full |
+| `user grant\|revoke <name>` | Admin console access |
+| `user passwd <name>` | New password, prompted and not echoed |
+| `user delete <name>` | The account and everything it owns — confirmation required, `-yes` to skip |
+| `rules list` | Anti-cheat rules, live thresholds and hit counts |
+| `rules set <name>` | Retune — `-enabled=false`, `-action observe\|reject`, repeatable `-param key=value` |
+| `findings` | Recent detections — `-rule`, `-mode`, `-user`, `-limit` |
+| `backup <dest>` | `VACUUM INTO` snapshot, consistent even while the server writes |
+
+The database is `-db`, then `$DB_PATH`, then `fastchem.db` — the same order the
+server uses, so both find the same file from the same directory.
+
+**Two changes are safe while the server is running**, because the server
+re-reads both: `is_admin` on every admin request, and `anticheat_rules` on a
+30-second ticker. So this needs no restart and no deploy:
+
+```bash
+fastchemctl user grant alice
+fastchemctl rules set impossible_speed -action reject -param min_seconds_easy=1.5
+```
+
+Unset flags keep their stored value, so retuning one threshold leaves the rule's
+action and its other thresholds alone. Deleting a player who is mid-match is the
+one operation that does not reconcile with live state — the server keeps that
+match in memory until it ends or is swept.
+
+In Docker the binary is on `PATH`:
+
+```bash
+docker compose exec fastchem fastchemctl user grant alice
+```
 
 ## Extending
 

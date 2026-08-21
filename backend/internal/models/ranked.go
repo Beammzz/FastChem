@@ -164,3 +164,15 @@ type RoomJoinedPayload struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
+// RankedLeaderboardEntry is one row of the rating ladder. Served both by
+// /api/ranked/leaderboard and, uncached, by the admin console.
+type RankedLeaderboardEntry struct {
+	Rank          int    `json:"rank"`
+	Username      string `json:"username"`
+	UserID        int64  `json:"userId"`
+	Rating        int    `json:"rating"`
+	Wins          int    `json:"wins"`
+	Losses        int    `json:"losses"`
+	HighestRating int    `json:"highestRating"`
+}

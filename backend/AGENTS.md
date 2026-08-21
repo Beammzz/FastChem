@@ -9,6 +9,7 @@ Go 1.24 + Gin server (module `github.com/takumi/fastchem`). Serves the JSON API 
 Owned directly by this doc:
 
 - `cmd/server/main.go` — the only wiring point: config load, JWT init, DB init, background cleanup goroutines, middleware order, route table, static-file fallback, graceful shutdown
+- `cmd/fastchemctl/main.go` — the management CLI, a second binary that talks to SQLite directly
 - `internal/config/config.go` — every environment variable read, with defaults
 - `go.mod` / `go.sum`
 
@@ -22,6 +23,9 @@ Delegated to children: `internal/database`, `internal/middleware`, `internal/mod
 - **Dependencies are constructor-injected.** Services are built in `main.go` and passed to `handlers.New*`. Package-level singletons are limited to `services.GlobalQuestionStore`, `services.GlobalMatchStore`, and `database.DB`.
 - **Background cleanup goroutines** live in `main.go` on 5-minute tickers: expired questions (10 min), stale matches (15 min), stale ranked matches (30 min), stale rooms (15 min). A new expiring store needs its sweeper added here.
 - **No CGO** — SQLite comes from the pure-Go `modernc.org/sqlite`. Builds run with `CGO_ENABLED=0`, and the runtime image needs no SQLite shared library. Keep it that way: a CGO dependency breaks native builds on machines without a C toolchain.
+- **`cmd/fastchemctl` exists for what a browser cannot reach:** the state before the first admin exists, a server that is down, and `docker exec`. It opens the database directly rather than calling the admin API, so it must never become a second copy of the console — anything a signed-in admin can already do in the UI does not belong here.
+- **The CLI reuses the server's packages rather than its own SQL.** Rules go through `anticheat.Store` (same validation, same params-merge), deletes through `database.DeleteUser` (same cascade), passwords through `bcrypt`. A hand-rolled query here is how the two drift apart.
+- **Two writes are safe against a running server, by construction:** `is_admin` is read on every admin request, and `anticheat_rules` is reloaded on a 30-second ticker. Anything else the CLI grows must state its interaction with live state — deleting a player mid-match leaves that match in memory until it ends or is swept.
 - **Static serving is a fallback layer**, registered after the API routes. It skips `/api/` prefixes and resolves clean URLs against `FRONTEND_DIR` (`<exe>/../frontend/out` when unset). Dynamic client routes such as `/profile/<username>` resolve by walking up to the nearest parent `index.html`.
 
 ## Work Guidance

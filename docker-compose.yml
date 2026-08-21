@@ -18,6 +18,10 @@ services:
       ALLOWED_ORIGINS: "http://localhost:8080,https://yourdomain.com"
       # Generate a strong secret, e.g.: openssl rand -hex 32
       JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+      # Comma-separated accounts promoted to admin at startup, granting access
+      # to /admin. Register the account first — a name with no account is
+      # skipped. Leave unset and nobody can reach the admin console.
+      ADMIN_USERNAMES: "${ADMIN_USERNAMES:-}"
     volumes:
       # Persist the SQLite database across container restarts
       - fastchem-data:/data

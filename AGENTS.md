@@ -82,7 +82,7 @@ Default section order:
 
 FastChem is a fast-paced chemistry practice game: timed multiple-choice questions in single player, custom rooms, and ranked 1v1. Two deployable parts, one binary in production.
 
-- `backend/` — Go 1.24 + Gin REST/WebSocket API, SQLite persistence. Also serves the built frontend.
+- `backend/` — Go 1.24 + Gin REST/WebSocket API, SQLite persistence. Also serves the built frontend. Ships a second binary, `cmd/fastchemctl`, for database management from a shell.
 - `frontend/` — Next.js 14 App Router, static-exported to `frontend/out/`.
 
 ## Ownership
@@ -90,7 +90,7 @@ FastChem is a fast-paced chemistry practice game: timed multiple-choice question
 Root-owned files:
 
 - `README.md` — user-facing setup, API summary, Docker instructions
-- `Dockerfile` — 3-stage build (frontend export → CGO-free Go build → debian-slim runtime)
+- `Dockerfile` — 3-stage build (frontend export → CGO-free Go build of both binaries → debian-slim runtime)
 - `docker-compose.yml` — single `fastchem` service, `fastchem-data` volume at `/data`
 - `run.sh` — local dev on Unix shells: builds the frontend, then runs the backend with `FRONTEND_DIR` set
 - `run.ps1` — the same dev flow for Windows PowerShell; keep the two in step when either changes
@@ -100,7 +100,8 @@ Root-owned files:
 ## Local Contracts
 
 - **One origin in production.** The Go server serves both `/api/*` and the static export, so the frontend calls the API with a relative base URL by default. Do not introduce a second runtime host without updating `Dockerfile`, `docker-compose.yml`, `run.sh`, `run.ps1`, and CORS defaults together.
-- **Environment variables** are read only in `backend/internal/config/config.go`: `PORT`, `DB_PATH`, `JWT_SECRET`, `GIN_MODE`, `FRONTEND_DIR`, `ALLOWED_ORIGINS`. Adding one means updating that file, `Dockerfile`, `docker-compose.yml`, and `README.md`.
+- **Environment variables** are read only in `backend/internal/config/config.go`: `PORT`, `DB_PATH`, `JWT_SECRET`, `GIN_MODE`, `FRONTEND_DIR`, `ALLOWED_ORIGINS`, `ADMIN_USERNAMES`. Adding one means updating that file, `Dockerfile`, `docker-compose.yml`, and `README.md`.
+- **`ADMIN_USERNAMES` is the only way into the admin console from a cold start.** It is empty by default, and an empty value means no account can reach `/api/admin/*`. Never give it a default value in any deployment file.
 - **API shape is a cross-stack contract.** Go structs in `backend/internal/models/` and TypeScript interfaces in `frontend/src/types/index.ts` describe the same JSON. A change to either side is incomplete until the other matches — JSON tags are camelCase on both sides.
 - **No secrets in the repo.** `JWT_SECRET` comes from the environment; the compose default `change-me-in-production` is a placeholder, not a value to rely on.
 - **Do not commit build output or data:** `frontend/out/`, `frontend/.next/`, `frontend/node_modules/`, `logs/`, `*.db*`.

@@ -30,8 +30,13 @@ type AuthResponse struct {
 }
 
 // UserPublic is a public-facing user representation (no sensitive fields).
+//
+// IsAdmin is set only on /api/auth/me, where the caller is the account itself.
+// It tells the client whether to offer the admin console; it grants nothing —
+// every /api/admin route re-reads the flag from the database.
 type UserPublic struct {
 	ID          int64  `json:"id"`
 	Username    string `json:"username"`
 	TotalPoints int    `json:"totalPoints"`
+	IsAdmin     bool   `json:"isAdmin,omitempty"`
 }

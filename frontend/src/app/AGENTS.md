@@ -21,6 +21,7 @@ Routes:
 - `login/page.tsx` — login and registration
 - `leaderboard/page.tsx` — global and ranked leaderboards
 - `profile/page.tsx` — thin wrapper that parses the username out of the path and renders `ProfileContent`
+- `admin/page.tsx` — the operator console: tab state, every admin fetch, and the panels from `@/components/admin`
 
 ## Local Contracts
 
@@ -29,6 +30,7 @@ Routes:
 - **`layout.tsx` renders `AuthProvider` only.** `Navbar` is imported per page, so a new page that needs it must render it itself.
 - **Pages compose, they do not implement.** Game logic comes from `@/hooks`, rendering from `@/components`, network calls from `@/lib/api`. A page that owns a `useEffect` polling loop or a raw `fetch` is misplaced.
 - **Auth state comes from `useAuth()`**, never by reading `localStorage` in a page.
+- **`admin/page.tsx` is the one page that owns fetching,** because its panels are presentational by contract. Each tab fetches only when selected, so opening the console does not pull every table at once; the live tab polls on a 5-second interval that is cleared on unmount. The `user.isAdmin` check here decides what to render — authorisation is the server's, on every request.
 - **UI copy is Thai.** `<html lang="th">` and page metadata are Thai; new user-facing strings match.
 - Navigate with `next/link` and `useRouter` from `next/navigation`; `trailingSlash: true` means internal hrefs should end in `/`.
 

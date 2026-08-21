@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -277,51 +278,42 @@ func (h *RankedHandler) GetRankedHistory(c *gin.Context) {
 
 // GetRankedLeaderboard handles GET /api/ranked/leaderboard.
 func (h *RankedHandler) GetRankedLeaderboard(c *gin.Context) {
-	rows, err := database.DB.QueryContext(c.Request.Context(), `
-		SELECT u.username, u.id, u.rating, u.ranked_wins, u.ranked_losses, u.highest_rating
-		FROM users u
-		WHERE u.ranked_wins + u.ranked_losses > 0
-		ORDER BY u.rating DESC
-		LIMIT 50
-	`)
+	entries, err := rankedLadder(c.Request.Context(), 50)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch ranked leaderboard"})
 		return
 	}
+
+	c.JSON(http.StatusOK, gin.H{"entries": entries})
+}
+
+// rankedLadder reads the top `limit` rated players. The admin console calls it
+// too, so the two views cannot disagree about what the ladder is.
+func rankedLadder(ctx context.Context, limit int) ([]models.RankedLeaderboardEntry, error) {
+	rows, err := database.DB.QueryContext(ctx, `
+		SELECT u.username, u.id, u.rating, u.ranked_wins, u.ranked_losses, u.highest_rating
+		FROM users u
+		WHERE u.ranked_wins + u.ranked_losses > 0
+		ORDER BY u.rating DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 
-	type RankedLeaderboardEntry struct {
-		Rank          int    `json:"rank"`
-		Username      string `json:"username"`
-		UserID        int64  `json:"userId"`
-		Rating        int    `json:"rating"`
-		Wins          int    `json:"wins"`
-		Losses        int    `json:"losses"`
-		HighestRating int    `json:"highestRating"`
-	}
-
-	var entries []RankedLeaderboardEntry
+	entries := []models.RankedLeaderboardEntry{}
 	rank := 0
 	for rows.Next() {
 		rank++
-		var e RankedLeaderboardEntry
-		err := rows.Scan(&e.Username, &e.UserID, &e.Rating, &e.Wins, &e.Losses, &e.HighestRating)
-		if err != nil {
+		var e models.RankedLeaderboardEntry
+		if err := rows.Scan(&e.Username, &e.UserID, &e.Rating, &e.Wins, &e.Losses, &e.HighestRating); err != nil {
 			continue
 		}
 		e.Rank = rank
 		entries = append(entries, e)
 	}
-	if err := rows.Err(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read ranked leaderboard"})
-		return
-	}
-
-	if entries == nil {
-		entries = []RankedLeaderboardEntry{}
-	}
-
-	c.JSON(http.StatusOK, gin.H{"entries": entries})
+	return entries, rows.Err()
 }
 
 // sendWSMessage sends a WebSocket message (JSON).

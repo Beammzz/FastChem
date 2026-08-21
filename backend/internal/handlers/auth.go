@@ -135,8 +135,10 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	// Fetch user stats
 	var stats models.UserStats
 
-	// Get total points from user
-	database.DB.QueryRowContext(ctx, "SELECT total_points FROM users WHERE id = ?", userID).Scan(&stats.TotalPoints)
+	// Get total points and admin flag from user
+	var isAdmin bool
+	database.DB.QueryRowContext(ctx, "SELECT total_points, is_admin FROM users WHERE id = ?", userID).
+		Scan(&stats.TotalPoints, &isAdmin)
 
 	err := database.DB.QueryRowContext(ctx, `
 		SELECT 
@@ -161,6 +163,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 			ID:          userID,
 			Username:    username,
 			TotalPoints: stats.TotalPoints,
+			IsAdmin:     isAdmin,
 		},
 		"stats": stats,
 	})
